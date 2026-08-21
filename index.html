@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <meta name="description" content="A shared work board: Problem, Idea, In progress, Done." />
+  <title>Board</title>
+  <link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#board">Skip to board</a>
+
+  <header class="topbar">
+    <div class="topbar__lead">
+      <h1 class="topbar__title">Board</h1>
+      <p class="progress" id="progress" aria-live="polite">&nbsp;</p>
+    </div>
+
+    <div class="topbar__search">
+      <svg class="topbar__search-icon" viewBox="0 0 20 20" aria-hidden="true">
+        <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="2" />
+        <path d="M13.5 13.5 18 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+      </svg>
+      <input
+        id="search"
+        class="input input--search"
+        type="search"
+        placeholder="Search titles, tags, notes&hellip;"
+        autocomplete="off"
+        aria-label="Search cards"
+      />
+      <button id="search-clear" class="icon-btn icon-btn--inset" type="button" aria-label="Clear search" hidden>
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <div class="topbar__actions">
+      <div id="people" class="people" role="group" aria-label="Filter by person"></div>
+      <button id="btn-new" class="btn btn--primary" type="button">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span>New card</span>
+      </button>
+      <button id="btn-identity" class="btn btn--ghost" type="button" aria-label="Change your name">
+        <span class="avatar avatar--sm" id="identity-avatar" aria-hidden="true"></span>
+        <span id="identity-name">&hellip;</span>
+      </button>
+      <button id="btn-theme" class="icon-btn" type="button" aria-label="Toggle theme" title="Toggle theme">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M16 11.5A6.5 6.5 0 0 1 8.5 4a6.5 6.5 0 1 0 7.5 7.5Z" fill="currentColor"/></svg>
+      </button>
+      <span id="conn" class="conn" title="Connection status"><i class="conn__dot"></i><span class="conn__label">&hellip;</span></span>
+    </div>
+  </header>
+
+  <div id="filter-bar" class="filter-bar" hidden>
+    <span class="filter-bar__label">Filtered by</span>
+    <div id="filter-chips" class="filter-bar__chips"></div>
+    <button id="filter-clear" class="btn btn--tiny" type="button">Clear all</button>
+    <span id="filter-count" class="filter-bar__count"></span>
+  </div>
+
+  <main id="board" class="board" tabindex="-1"></main>
+
+  <div id="detail-root"></div>
+  <div id="modal-root"></div>
+  <div id="toast-root" class="toast-root" aria-live="polite" aria-atomic="false"></div>
+  <div id="drag-layer" class="drag-layer" aria-hidden="true"></div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
