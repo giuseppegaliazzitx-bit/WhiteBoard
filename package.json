@@ -1,0 +1,23 @@
+{
+  "name": "whiteboard",
+  "version": "1.0.0",
+  "description": "A shared work board: Problem -> Idea -> In progress -> Done",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:ui": "vitest --ui"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "devDependencies": {
+    "happy-dom": "^15.0.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}
