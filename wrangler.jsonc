@@ -1,0 +1,8 @@
+{
+  "name": "whiteboard",
+  "compatibility_date": "2026-08-21",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
