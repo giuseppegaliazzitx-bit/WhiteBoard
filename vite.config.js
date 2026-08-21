@@ -5,6 +5,17 @@ export default defineConfig({
   base: './',
   build: {
     outDir: 'dist',
+    /**
+     * Pinned explicitly. Vite 6 changed the default from 'modules' to
+     * 'baseline-widely-available', which quietly drops everything older than
+     * roughly Safari 16 / Chrome 107.
+     *
+     * Nothing here needs that: boot is wrapped in a function specifically to
+     * avoid top-level await, which is the feature that would force the target
+     * up. So the wider set costs nothing and the support floor stays a choice
+     * rather than something a dependency bump decides.
+     */
+    target: ['es2020', 'chrome87', 'edge88', 'firefox78', 'safari14'],
     // The anon key is public by design, but source maps would also expose
     // the module layout for no benefit. Keep the bundle lean instead.
     sourcemap: false,
