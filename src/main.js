@@ -1,40 +1,78 @@
 /**
- * Phase 1: static layout only.
- * Four columns rendered from a hardcoded fixture so the visual design can be
- * checked before any storage exists. Replaced in phase 2 by the store.
+ * Phase 2: the board reads and writes through the store interface.
+ * Card CRUD and the detail panel arrive in phase 3; for now the handlers only
+ * prove the wiring.
  */
 import { createBoardView } from './ui/board.js'
 import { initTheme } from './ui/theme.js'
-import { normalizeCard, STAGES } from './model.js'
+import { createStore } from './store/index.js'
+import { sortByPosition, positionForAppend, positionForPrepend } from './position.js'
+import { STAGES, DONE_STAGE } from './model.js'
 
-const FIXTURE = [
-  { id: 'a', title: 'Invoices export drops the last row', status: 'problem', tag: 'billing',
-    assignees: ['Sam Rivera'], position: 1000,
-    notes: [{ id: 'n1', author: 'Sam Rivera', text: 'Reproduced on staging.', at: new Date().toISOString() }] },
-  { id: 'b', title: 'Nobody knows who owns the on-call rota', status: 'problem', tag: 'infra', position: 2000 },
-  { id: 'c', title: 'Batch the webhook retries', body: 'Group by endpoint, back off exponentially.',
-    status: 'idea', tag: 'infra', assignees: ['Alex Chen', 'Sam Rivera'], position: 1000 },
-  { id: 'd', title: 'Move the changelog into the app', status: 'idea', position: 2000 },
-  { id: 'e', title: 'Rewrite the CSV parser', status: 'progress', tag: 'billing',
-    assignees: ['Alex Chen'], position: 1000 },
-  { id: 'f', title: 'Ship the new landing page', status: 'done', tag: 'web',
-    assignees: ['Jo Park'], position: 1000 },
-].map(normalizeCard)
+const SEED = [
+  { title: 'Invoices export drops the last row', status: 'problem', tag: 'billing', assignees: ['Sam Rivera'] },
+  { title: 'Nobody knows who owns the on-call rota', status: 'problem', tag: 'infra' },
+  { title: 'Batch the webhook retries', body: 'Group by endpoint, back off exponentially.', status: 'idea', tag: 'infra', assignees: ['Alex Chen', 'Sam Rivera'] },
+  { title: 'Rewrite the CSV parser', status: 'progress', tag: 'billing', assignees: ['Alex Chen'] },
+  { title: 'Ship the new landing page', status: 'done', tag: 'web', assignees: ['Jo Park'] },
+]
 
-const boardRoot = document.getElementById('board')
+const store = createStore({ boardId: 'main' })
+let cards = []
 
 initTheme(document.getElementById('btn-theme'))
 
-const view = createBoardView(boardRoot, {
+const view = createBoardView(document.getElementById('board'), {
   onOpen: (id) => console.log('open card', id),
-  onAdd: (stage, where) => console.log('add card', stage, where),
+  onAdd: async (status, where) => {
+    const column = cardsIn(status)
+    await store.create({
+      title: '',
+      status,
+      position: where === 'top' ? positionForPrepend(column) : positionForAppend(column),
+    })
+    await refresh()
+  },
 })
 
-const byStage = new Map(STAGES.map((s) => [s.id, []]))
-for (const card of FIXTURE) byStage.get(card.status).push(card)
-for (const list of byStage.values()) list.sort((a, b) => a.position - b.position)
+function cardsIn(status) {
+  return sortByPosition(cards.filter((c) => c.status === status))
+}
 
-view.render(byStage)
+function render() {
+  const byStage = new Map(STAGES.map((s) => [s.id, []]))
+  for (const card of cards) byStage.get(card.status)?.push(card)
+  for (const [id, list] of byStage) byStage.set(id, sortByPosition(list))
 
-document.getElementById('progress').textContent =
-  `${FIXTURE.filter((c) => c.status === 'done').length} of ${FIXTURE.length} done`
+  view.render(byStage)
+
+  const done = cards.filter((c) => c.status === DONE_STAGE).length
+  document.getElementById('progress').textContent = cards.length
+    ? `${done} of ${cards.length} done`
+    : ''
+}
+
+async function refresh() {
+  cards = await store.list()
+  render()
+}
+
+// Other tabs write through the same key; reload when they do.
+store.subscribe(refresh)
+
+// Boot lives in a function rather than using top-level await: TLA would force
+// the build target up to esnext and drop Safari 14 and friends for no gain.
+async function boot() {
+  await refresh()
+  if (!cards.length) {
+    for (const [i, seed] of SEED.entries()) {
+      await store.create({ ...seed, position: (i + 1) * 1000 })
+    }
+    await refresh()
+  }
+}
+
+boot().catch((err) => {
+  console.error(err)
+  document.getElementById('board').textContent = 'Could not load the board.'
+})

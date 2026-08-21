@@ -117,7 +117,7 @@ export function normalizeNotes(value) {
  */
 export function normalizeCard(raw) {
   const src = raw && typeof raw === 'object' ? raw : {}
-  const position = Number(src.position)
+  const position = toFiniteNumber(src.position)
   return {
     id: str(src.id, 64) || newId(),
     title: str(src.title, LIMITS.title),
@@ -126,11 +126,26 @@ export function normalizeCard(raw) {
     tag: str(src.tag, LIMITS.tag).trim(),
     assignees: normalizeAssignees(maybeParse(src.assignees)),
     notes: normalizeNotes(maybeParse(src.notes)),
-    position: Number.isFinite(position) ? position : 1000,
+    position: position === null ? 1000 : position,
     board: str(src.board, 64) || 'main',
     created_at: isoOr(src.created_at),
     updated_at: isoOr(src.updated_at),
   }
+}
+
+/**
+ * Strict numeric coercion. Plain `Number()` is unusable here: Number(null),
+ * Number('') and Number([]) are all 0, which is a *valid* position -- so a row
+ * with a null position column would silently pin itself to the top of its
+ * column instead of taking the default.
+ */
+function toFiniteNumber(value) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : null
+  }
+  return null
 }
 
 function maybeParse(value) {
