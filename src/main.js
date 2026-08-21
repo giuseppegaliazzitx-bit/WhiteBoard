@@ -13,10 +13,13 @@ import { createDetail } from './ui/detail.js'
 import { createIdentity } from './ui/identity.js'
 import { initTheme } from './ui/theme.js'
 import { toast, errorToast } from './ui/toast.js'
-import { h, clear } from './ui/dom.js'
+import { h, clear, icon } from './ui/dom.js'
+import { avatar } from './ui/card.js'
+import { plural } from './ui/format.js'
 import { createStore } from './store/index.js'
 import { createSync } from './sync.js'
 import { groupByStage, peopleFrom, progressOf, tagsFrom } from './selectors.js'
+import { applyFilters, isFiltering, describeFilters, removeFromQuery } from './filters.js'
 import { STAGE_IDS, getStage, stageIndex } from './model.js'
 import {
   sortByPosition,
@@ -25,7 +28,14 @@ import {
   positionForPrepend,
   renumberPlan,
 } from './position.js'
-import { normalizeCard, makeNote, initials, avatarColor, DEFAULT_STAGE } from './model.js'
+import {
+  normalizeCard,
+  makeNote,
+  initials,
+  avatarColor,
+  personKey,
+  DEFAULT_STAGE,
+} from './model.js'
 import { config } from './config.js'
 
 const SEED = [
@@ -47,6 +57,9 @@ let seenIds = null
 
 /** @type {import('./model.js').Card[]} */
 let cards = []
+
+/** Active filters. `people` holds full names; the query holds everything else. */
+const filters = { query: '', people: [] }
 
 // ------------------------------------------------------------------ helpers
 
@@ -221,6 +234,12 @@ const drag = createDragController({
 
 const liveEl = document.getElementById('live')
 const progressEl = document.getElementById('progress')
+const peopleEl = document.getElementById('people')
+const searchEl = document.getElementById('search')
+const searchClear = document.getElementById('search-clear')
+const filterBar = document.getElementById('filter-bar')
+const filterChips = document.getElementById('filter-chips')
+const filterCount = document.getElementById('filter-count')
 
 const connEl = document.getElementById('conn')
 
@@ -262,10 +281,113 @@ function renderIdentity() {
 }
 
 function render() {
-  view.render(groupByStage(cards))
+  const filtering = isFiltering(filters)
+  const shown = applyFilters(cards, filters)
 
+  view.render(groupByStage(shown), { filtering })
+  renderPeople()
+  renderFilterBar(shown, filtering)
+  renderProgress(shown, filtering)
+}
+
+function renderProgress(shown, filtering) {
   const { done, total } = progressOf(cards)
-  progressEl.textContent = total ? `${done} of ${total} done` : ''
+  if (!total) {
+    progressEl.textContent = ''
+    return
+  }
+  progressEl.textContent = filtering
+    ? `${shown.length} of ${total} shown`
+    : `${done} of ${total} done`
+  progressEl.title = `${done} done, ${total - done} still open`
+}
+
+const MAX_PEOPLE_SHOWN = 5
+
+function renderPeople() {
+  const people = peopleFrom(cards)
+  clear(peopleEl)
+
+  for (const person of people.slice(0, MAX_PEOPLE_SHOWN)) {
+    const active = filters.people.some((n) => personKey(n) === personKey(person.name))
+    const chip = avatar(person.name, 'avatar--sm')
+    chip.removeAttribute('title')
+
+    peopleEl.appendChild(
+      h(
+        'button',
+        {
+          class: 'people__btn',
+          type: 'button',
+          'aria-pressed': String(active),
+          title: `${person.name} — ${plural(person.count, 'card')}`,
+          'aria-label': `${active ? 'Stop filtering by' : 'Filter by'} ${person.name}`,
+          onclick: () => togglePerson(person.name),
+        },
+        chip,
+      ),
+    )
+  }
+
+  if (people.length > MAX_PEOPLE_SHOWN) {
+    peopleEl.appendChild(
+      h('span', {
+        class: 'people__more',
+        text: `+${people.length - MAX_PEOPLE_SHOWN}`,
+        title: people.slice(MAX_PEOPLE_SHOWN).map((p) => p.name).join(', '),
+      }),
+    )
+  }
+}
+
+function renderFilterBar(shown, filtering) {
+  filterBar.hidden = !filtering
+  if (!filtering) return
+
+  clear(filterChips)
+  for (const chip of describeFilters(filters)) {
+    filterChips.appendChild(
+      h(
+        'span',
+        { class: 'filter-chip' },
+        h('span', { text: chip.label }),
+        h(
+          'button',
+          { type: 'button', 'aria-label': `Remove filter ${chip.label}`, onclick: () => removeChip(chip) },
+          icon('x'),
+        ),
+      ),
+    )
+  }
+
+  filterCount.textContent = `${plural(shown.length, 'card')}`
+}
+
+// ------------------------------------------------------------------ filtering
+
+function setQuery(value, { syncInput = false } = {}) {
+  filters.query = value
+  if (syncInput) searchEl.value = value
+  searchClear.hidden = !searchEl.value
+  render()
+}
+
+function togglePerson(name) {
+  const key = personKey(name)
+  const index = filters.people.findIndex((n) => personKey(n) === key)
+  if (index === -1) filters.people.push(name)
+  else filters.people.splice(index, 1)
+  render()
+}
+
+function removeChip(chip) {
+  if (chip.kind === 'person') togglePerson(chip.value)
+  else setQuery(removeFromQuery(filters.query, chip), { syncInput: true })
+}
+
+function clearFilters() {
+  filters.people = []
+  setQuery('', { syncInput: true })
 }
 
 async function refresh() {
@@ -294,6 +416,34 @@ async function refresh() {
 initTheme(document.getElementById('btn-theme'))
 
 document.getElementById('btn-new').addEventListener('click', () => createCard(DEFAULT_STAGE, 'top'))
+
+// Typing filters live. Debounced so a long query does not re-render the whole
+// board on every keystroke.
+let searchTimer = null
+searchEl.addEventListener('input', () => {
+  searchClear.hidden = !searchEl.value
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => setQuery(searchEl.value), 120)
+})
+
+searchEl.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    e.preventDefault()
+    if (searchEl.value) clearFilters()
+    else searchEl.blur()
+  }
+})
+
+searchClear.addEventListener('click', () => {
+  clearTimeout(searchTimer)
+  setQuery('', { syncInput: true })
+  searchEl.focus()
+})
+
+document.getElementById('filter-clear').addEventListener('click', () => {
+  clearFilters()
+  searchEl.focus()
+})
 
 document.getElementById('btn-identity').addEventListener('click', async () => {
   await identity.change()
@@ -331,6 +481,13 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'n') {
     e.preventDefault()
     createCard(DEFAULT_STAGE, 'top')
+  } else if (e.key === '/') {
+    e.preventDefault()
+    searchEl.focus()
+    searchEl.select()
+  } else if (e.key === 'Escape' && isFiltering(filters)) {
+    e.preventDefault()
+    clearFilters()
   }
 })
 
