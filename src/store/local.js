@@ -98,6 +98,12 @@ export function createLocalStore({ boardId = 'main' } = {}) {
       return () => listeners.delete(handler)
     },
 
+    /** Same surface as the Supabase adapter; there is no socket to report on. */
+    onStatus(handler) {
+      handler('local')
+      return () => {}
+    },
+
     async close() {
       listeners.clear()
       if (typeof window !== 'undefined') window.removeEventListener('storage', onStorage)

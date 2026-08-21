@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 /**
  * The behaviour every storage adapter must exhibit.
@@ -163,6 +163,37 @@ export function runStoreContract(name, makeStore) {
         off()
         await store.create({ title: 'A' })
         expect(calls).toBe(0)
+      })
+
+      it('does not deliver connection status through the data channel', async () => {
+        // A subscriber that reloads the board must not reload it because a
+        // socket connected. Status has its own channel.
+        const onData = vi.fn()
+        store.subscribe(onData)
+        store.onStatus(() => {})
+        expect(onData).not.toHaveBeenCalled()
+      })
+    })
+
+    describe('onStatus', () => {
+      it('reports the current status immediately and hands back an unsubscribe', () => {
+        // At least one: the current state is replayed on subscribe, and an
+        // adapter that connects synchronously may follow it with a transition.
+        const seen = []
+        const off = store.onStatus((s) => seen.push(s))
+        expect(seen.length).toBeGreaterThanOrEqual(1)
+        expect(seen.every((s) => typeof s === 'string' && s.length > 0)).toBe(true)
+        expect(typeof off).toBe('function')
+        off()
+      })
+
+      it('stops reporting status after unsubscribe', () => {
+        const seen = []
+        const off = store.onStatus((s) => seen.push(s))
+        const before = seen.length
+        off()
+        store.onStatus(() => {})
+        expect(seen).toHaveLength(before)
       })
     })
   })
