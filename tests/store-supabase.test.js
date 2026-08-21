@@ -100,6 +100,17 @@ describe('error messages', () => {
     ).rejects.toThrow(/schema\.sql/)
   })
 
+  it('recognises the code PostgREST actually returns for a missing table', async () => {
+    // Observed against a live project that had not run schema.sql yet:
+    // PostgREST answers PGRST205, not the raw Postgres 42P01.
+    await expect(
+      failWith(
+        { code: 'PGRST205', message: "Could not find the table 'public.cards' in the schema cache" },
+        (s) => s.list(),
+      ),
+    ).rejects.toThrow(/schema\.sql/)
+  })
+
   it('explains an RLS refusal by naming the policy', async () => {
     await expect(
       failWith({ code: '42501', message: 'new row violates row-level security policy' }, (s) =>
