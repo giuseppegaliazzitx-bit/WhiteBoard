@@ -28,34 +28,57 @@ npm run preview      # serve the build
 
 ## Connecting Supabase
 
-**1. Create a project** at [supabase.com](https://supabase.com) (free tier is
-several times more than this needs).
-
-**2. Create the table.** Open *SQL Editor*, paste
-[`supabase/schema.sql`](supabase/schema.sql), run it. It is safe to re-run.
-
-**3. Fill in `.env`:**
+### Option A — scripted
 
 ```bash
-cp .env.example .env
+# 1. Create a Personal Access Token: https://supabase.com/dashboard/account/tokens
+export SUPABASE_ACCESS_TOKEN=sbp_...        # PowerShell: $env:SUPABASE_ACCESS_TOKEN="sbp_..."
+
+# 2. See what it would do, without creating anything
+npm run setup:supabase -- --dry-run
+
+# 3. Go
+npm run setup:supabase
 ```
+
+It creates the project, waits for the database, applies `supabase/schema.sql`,
+reads the anon key and writes `.env`. It asks before creating anything, and
+re-running reuses a project of the same name rather than making a second one.
+
+| Flag | Default | |
+|---|---|---|
+| `--dry-run` | | check the token and report, create nothing |
+| `--name` | `board` | project name |
+| `--org` | your only org | required if you are in more than one |
+| `--region` | `us-east-1` | e.g. `eu-west-1`, `ap-southeast-2` |
+| `--yes` | | skip the confirmation prompt |
+
+If any step fails it prints the manual equivalent for that step, so a partial
+run is recoverable rather than a dead end.
+
+### Option B — by hand
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. *SQL Editor* → paste [`supabase/schema.sql`](supabase/schema.sql) → Run.
+   Safe to re-run.
+3. `cp .env.example .env`, then fill in from *Project Settings → API*:
 
 ```ini
 VITE_SUPABASE_URL=https://yourproject.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
 ```
 
-Both are under *Project Settings → API*.
+### Either way
 
-> Use the **anon / public** key, never `service_role`. The app checks and
-> refuses to start with a service key — it bypasses row level security and
+Restart the dev server. The indicator top-right should read **Live** instead of
+*This browser only*.
+
+> Use the **anon / public** key, never `service_role`. The app decodes the key
+> and refuses to start with a service key — it bypasses row level security and
 > would be published in the page source. See [SECURITY.md](SECURITY.md).
 
-**4. Restart the dev server.** The indicator in the top right should read
-**Live** instead of *This browser only*.
-
-Leaving the two values blank is a supported configuration, not a broken one:
-the board runs on `localStorage` and never loads the Supabase library at all.
+Leaving both values blank is a supported configuration, not a broken one: the
+board runs on `localStorage` and never loads the Supabase library at all.
 
 ---
 
