@@ -42,7 +42,11 @@ function explain(error, fallback) {
   if (code === '42501' || /row-level security/i.test(message)) {
     return new Error('The database rejected that write. Check the RLS policy on `cards`.')
   }
-  if (code === '42P01' || /relation .* does not exist/i.test(message)) {
+  // PGRST205 is what PostgREST returns for an unknown table; 42P01 is the raw
+  // Postgres code, which only surfaces on a direct query. Both mean the same
+  // thing to the person reading it.
+  if (code === 'PGRST205' || code === '42P01' || /relation .* does not exist/i.test(message) ||
+      /could not find the table/i.test(message)) {
     return new Error('The `cards` table is missing. Run supabase/schema.sql on your project.')
   }
   if (/JWT|api key/i.test(message)) {
