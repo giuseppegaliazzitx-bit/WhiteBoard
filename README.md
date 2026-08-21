@@ -68,7 +68,16 @@ VITE_SUPABASE_URL=https://yourproject.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOi...
 ```
 
-### Either way
+### Checking it worked
+
+```bash
+npm run doctor                                        # local setup
+npm run doctor -- --url https://your-board.pages.dev  # and the deployed one
+```
+
+It reports exactly what is missing and how to fix it. With `--url` it also
+fetches the deployed JavaScript and confirms the Supabase values were baked
+into it — see the Cloudflare section for why that matters.
 
 Restart the dev server. The indicator top-right should read **Live** instead of
 *This browser only*.
@@ -99,6 +108,16 @@ board runs on `localStorage` and never loads the Supabase library at all.
    `VITE_SUPABASE_ANON_KEY` with the same values as your `.env`. Vite reads
    them at build time, so a change needs a redeploy, not just a refresh.
 5. Deploy.
+
+> **The step that silently breaks things:** `.env` is gitignored, so Cloudflare
+> never sees it. If you skip step 4, the build runs with blank values and every
+> visitor gets their own private `localStorage` board. It looks like it works —
+> cards save, nothing errors — but nobody is sharing anything. Set the two
+> variables for **both Production and Preview**, then **Deployments → Retry
+> deployment**: Vite reads env vars at build time, so an existing build will not
+> pick them up.
+>
+> `npm run doctor -- --url https://your-board.pages.dev` checks this for you.
 
 `public/_headers` ships a CSP and cache policy that Cloudflare applies
 automatically. Assets are hashed and cached for a year; `index.html` is not
