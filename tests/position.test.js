@@ -7,7 +7,6 @@ import {
   positionForAppend,
   positionForPrepend,
   renumberPlan,
-  indexAfterRemoval,
 } from '../src/position.js'
 
 const card = (id, position, created_at = '2026-01-01T00:00:00.000Z') => ({ id, position, created_at })
@@ -166,23 +165,5 @@ describe('renumberPlan', () => {
   it('produces positions that survive another 50 splits', () => {
     const plan = renumberPlan([card('a', 1000), card('b', 1000.0001)])
     expect(positionForIndex([card('a', 1000), card('b', plan[0].position)], 1).exhausted).toBe(false)
-  })
-})
-
-describe('indexAfterRemoval', () => {
-  it('shifts left when the card moved down past its own slot', () => {
-    expect(indexAfterRemoval(3, 1)).toBe(2)
-  })
-
-  it('leaves the index alone when the card moved up', () => {
-    expect(indexAfterRemoval(1, 3)).toBe(1)
-  })
-
-  it('leaves the index alone when the card came from another column', () => {
-    expect(indexAfterRemoval(2, -1)).toBe(2)
-  })
-
-  it('leaves the index alone at its own position', () => {
-    expect(indexAfterRemoval(2, 2)).toBe(2)
   })
 })

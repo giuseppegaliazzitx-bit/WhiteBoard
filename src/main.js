@@ -8,6 +8,7 @@
  * moving feels broken.
  */
 import { createBoardView } from './ui/board.js'
+import { createDragController } from './ui/dnd.js'
 import { createDetail } from './ui/detail.js'
 import { createIdentity } from './ui/identity.js'
 import { initTheme } from './ui/theme.js'
@@ -15,7 +16,14 @@ import { toast, errorToast } from './ui/toast.js'
 import { h, clear } from './ui/dom.js'
 import { createStore } from './store/index.js'
 import { groupByStage, peopleFrom, progressOf, tagsFrom } from './selectors.js'
-import { sortByPosition, positionForAppend, positionForPrepend } from './position.js'
+import { STAGE_IDS, getStage, stageIndex } from './model.js'
+import {
+  sortByPosition,
+  positionForIndex,
+  positionForAppend,
+  positionForPrepend,
+  renumberPlan,
+} from './position.js'
 import { normalizeCard, makeNote, initials, avatarColor, DEFAULT_STAGE } from './model.js'
 
 const SEED = [
@@ -114,10 +122,69 @@ async function deleteCard(card) {
   })
 }
 
+/**
+ * Land `id` at `index` within `status`. `index` is an index into that column
+ * *without* the moved card, which is what both the drop indicator and the
+ * keyboard path already produce.
+ */
+async function moveCard(id, status, index) {
+  const card = find(id)
+  if (!card) return
+
+  let { position, exhausted } = positionForIndex(columnCards(status, id), index)
+
+  if (exhausted) {
+    // ~50 midpoint splits of one gap have used up the float. Spread this
+    // column back onto round numbers and recompute against the new spacing.
+    await renumberColumn(status)
+    ;({ position } = positionForIndex(columnCards(status, id), index))
+  }
+
+  if (card.status === status && card.position === position) return
+
+  try {
+    await patchCard(id, { status, position })
+    announce(`Moved to ${getStage(status).name}, position ${index + 1}`)
+  } catch (err) {
+    errorToast(err, 'Could not move the card.')
+  }
+}
+
+async function renumberColumn(status) {
+  const plan = renumberPlan(cards.filter((c) => c.status === status))
+  for (const { id, position } of plan) {
+    await patchCard(id, { position })
+  }
+}
+
+/** Nudge a card one slot within its column, or one column sideways. */
+async function nudgeCard(id, dx, dy) {
+  const card = find(id)
+  if (!card) return
+
+  if (dx !== 0) {
+    const next = STAGE_IDS[stageIndex(card.status) + dx]
+    if (!next) return
+    await moveCard(id, next, columnCards(next, id).length)
+  } else {
+    const column = columnCards(card.status)
+    const from = column.findIndex((c) => c.id === id)
+    const to = from + dy
+    if (to < 0 || to >= column.length) return
+    await moveCard(id, card.status, to)
+  }
+
+  // The board re-rendered, so the focused node was replaced.
+  view.cardNode(id)?.focus()
+}
+
 // ------------------------------------------------------------------ views
 
 const view = createBoardView(document.getElementById('board'), {
   onOpen: (id) => {
+    // The drag controller swallows the click that follows a drop; this is the
+    // second line of defence so a drop can never also open the card.
+    if (drag.isDragging) return
     const card = find(id)
     if (card) detail.open(card)
   },
@@ -136,9 +203,25 @@ const detail = createDetail({
   positionForStage: (status, movingId) => positionForAppend(columnCards(status, movingId)),
 })
 
+const drag = createDragController({
+  root: document.getElementById('board'),
+  layer: document.getElementById('drag-layer'),
+  onMove: (id, status, index) => moveCard(id, status, index),
+})
+
 // ------------------------------------------------------------------ chrome
 
+const liveEl = document.getElementById('live')
 const progressEl = document.getElementById('progress')
+
+/** Screen-reader announcement for changes with no visible text equivalent. */
+function announce(message) {
+  liveEl.textContent = ''
+  // A same-text update is not re-announced; the empty tick forces it.
+  requestAnimationFrame(() => {
+    liveEl.textContent = message
+  })
+}
 const identityName = document.getElementById('identity-name')
 const identityAvatar = document.getElementById('identity-avatar')
 
@@ -192,7 +275,23 @@ identity.onChange(() => {
 
 document.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable
-  if (typing || e.metaKey || e.ctrlKey || e.altKey) return
+  if (typing) return
+
+  // Ctrl/Cmd + arrows move the focused card. Dragging is a pointer gesture,
+  // so without this there would be no keyboard way to reorder a column.
+  const focusedCard = e.target.closest?.('.card')
+  if (focusedCard && (e.metaKey || e.ctrlKey)) {
+    const delta = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    }[e.key]
+    if (delta) {
+      e.preventDefault()
+      nudgeCard(focusedCard.dataset.id, delta[0], delta[1])
+      return
+    }
+  }
+
+  if (e.metaKey || e.ctrlKey || e.altKey) return
 
   if (e.key === 'n') {
     e.preventDefault()

@@ -18,6 +18,7 @@ export function installShell() {
     <div id="detail-root"></div>
     <div id="modal-root"></div>
     <div id="toast-root"></div>
+    <div id="live"></div>
     <div id="drag-layer"></div>
   `
   document.documentElement.dataset.theme = 'light'
