@@ -25,6 +25,7 @@ import {
   renumberPlan,
 } from './position.js'
 import { normalizeCard, makeNote, initials, avatarColor, DEFAULT_STAGE } from './model.js'
+import { config } from './config.js'
 
 const SEED = [
   { title: 'Invoices export drops the last row', status: 'problem', tag: 'billing', assignees: ['Sam Rivera'] },
@@ -34,8 +35,10 @@ const SEED = [
   { title: 'Ship the new landing page', status: 'done', tag: 'web', assignees: ['Jo Park'] },
 ]
 
-const store = createStore({ boardId: 'main' })
 const identity = createIdentity()
+
+/** Assigned during boot -- createStore is async so supabase-js stays lazy. */
+let store = null
 
 /** @type {import('./model.js').Card[]} */
 let cards = []
@@ -214,6 +217,24 @@ const drag = createDragController({
 const liveEl = document.getElementById('live')
 const progressEl = document.getElementById('progress')
 
+const connEl = document.getElementById('conn')
+
+const CONNECTION_LABEL = {
+  live: 'Live',
+  polling: 'Syncing',
+  offline: 'Offline',
+  local: 'This browser only',
+}
+
+function setConnection(state) {
+  connEl.dataset.state = state
+  connEl.querySelector('.conn__label').textContent = CONNECTION_LABEL[state] || ''
+  connEl.title =
+    state === 'local'
+      ? 'No Supabase connection configured — cards are stored in this browser only.'
+      : `Realtime: ${CONNECTION_LABEL[state]}`
+}
+
 /** Screen-reader announcement for changes with no visible text equivalent. */
 function announce(message) {
   liveEl.textContent = ''
@@ -304,15 +325,27 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') refresh().catch(console.error)
 })
 
-store.subscribe(() => refresh().catch(console.error))
-
 // ------------------------------------------------------------------ boot
 
 async function boot() {
   renderIdentity()
+
+  // Misconfiguration is loud rather than a silent fall back to a private
+  // board that looks shared until someone else opens it.
+  for (const problem of config.problems) {
+    errorToast(new Error(problem))
+    console.error(`[config] ${problem}`)
+  }
+
+  store = await createStore()
+  store.subscribe(() => refresh().catch(console.error))
+  setConnection(store.mode === 'local' ? 'local' : 'polling')
+
   await refresh()
 
-  if (!cards.length) {
+  // Seed only a brand-new local board. A shared board that is genuinely empty
+  // should stay empty rather than filling up with someone else's examples.
+  if (!cards.length && store.mode === 'local') {
     for (const [i, seed] of SEED.entries()) {
       await store.create({ ...seed, position: (i + 1) * 1000 })
     }
