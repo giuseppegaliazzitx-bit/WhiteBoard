@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm test
+
+      # Builds with an empty .env, which is the localStorage configuration.
+      # Enough to catch a syntax error or a broken import; the Supabase path is
+      # covered by the adapter's contract tests.
+      - run: npm run build
