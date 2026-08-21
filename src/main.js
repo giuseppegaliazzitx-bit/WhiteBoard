@@ -15,6 +15,7 @@ import { initTheme } from './ui/theme.js'
 import { toast, errorToast } from './ui/toast.js'
 import { h, clear } from './ui/dom.js'
 import { createStore } from './store/index.js'
+import { createSync } from './sync.js'
 import { groupByStage, peopleFrom, progressOf, tagsFrom } from './selectors.js'
 import { STAGE_IDS, getStage, stageIndex } from './model.js'
 import {
@@ -39,6 +40,10 @@ const identity = createIdentity()
 
 /** Assigned during boot -- createStore is async so supabase-js stays lazy. */
 let store = null
+let sync = null
+
+/** Card ids already rendered, so arrivals from other people can be flashed. */
+let seenIds = null
 
 /** @type {import('./model.js').Card[]} */
 let cards = []
@@ -267,6 +272,15 @@ async function refresh() {
   cards = await store.list()
   render()
 
+  // Highlight cards that appeared since the last read. Skipped on the first
+  // read, when everything is new and the whole board would flash.
+  if (seenIds) {
+    for (const card of cards) {
+      if (!seenIds.has(card.id)) view.flash(card.id)
+    }
+  }
+  seenIds = new Set(cards.map((c) => c.id))
+
   // Keep an open drawer in step with what just arrived.
   if (detail.currentId) {
     const card = find(detail.currentId)
@@ -320,11 +334,6 @@ document.addEventListener('keydown', (e) => {
   }
 })
 
-// A tab that was in the background may have missed writes from another tab.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') refresh().catch(console.error)
-})
-
 // ------------------------------------------------------------------ boot
 
 async function boot() {
@@ -338,10 +347,11 @@ async function boot() {
   }
 
   store = await createStore()
-  store.subscribe(() => refresh().catch(console.error))
-  setConnection(store.mode === 'local' ? 'local' : 'polling')
-
   await refresh()
+
+  // Realtime, poll fallback, wake-on-visible and offline handling all live in
+  // the sync controller so main.js does not accumulate timers.
+  sync = createSync({ store, refresh, setState: setConnection })
 
   // Seed only a brand-new local board. A shared board that is genuinely empty
   // should stay empty rather than filling up with someone else's examples.
@@ -355,6 +365,12 @@ async function boot() {
   await identity.ensure()
   renderIdentity()
 }
+
+// Release the realtime channel promptly rather than waiting for a socket timeout.
+window.addEventListener('pagehide', () => {
+  sync?.destroy()
+  store?.close?.()
+})
 
 boot().catch((err) => {
   console.error(err)
