@@ -89,13 +89,3 @@ export function renumberPlan(cards) {
   }
   return plans
 }
-
-/**
- * Index a card should land at, given the drop indicator's index in the *full*
- * column list. When a card moves down within its own column, removing it first
- * shifts every later index left by one.
- */
-export function indexAfterRemoval(fullIndex, removedIndex) {
-  if (removedIndex === -1 || removedIndex === null) return fullIndex
-  return fullIndex > removedIndex ? fullIndex - 1 : fullIndex
-}
