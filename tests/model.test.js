@@ -6,6 +6,9 @@ import {
   isStage,
   getStage,
   stageIndex,
+  nextStageId,
+  daysIdle,
+  STALE_DAYS,
   newId,
   personKey,
   normalizeAssignees,
@@ -48,6 +51,36 @@ describe('stages', () => {
     expect(stageIndex('problem')).toBe(0)
     expect(stageIndex('done')).toBe(3)
     expect(stageIndex('nope')).toBe(0)
+  })
+
+  it('names the next stage, or null at Done', () => {
+    expect(nextStageId('problem')).toBe('idea')
+    expect(nextStageId('progress')).toBe('done')
+    expect(nextStageId('done')).toBeNull()
+    expect(nextStageId('nope')).toBeNull()
+  })
+})
+
+describe('daysIdle', () => {
+  const now = Date.parse('2026-08-23T12:00:00Z')
+
+  it('counts whole days since the timestamp', () => {
+    expect(daysIdle(new Date(now - 3 * 86400000).toISOString(), now)).toBe(3)
+  })
+
+  it('is zero for a missing or unparseable date', () => {
+    expect(daysIdle('', now)).toBe(0)
+    expect(daysIdle('not-a-date', now)).toBe(0)
+  })
+
+  it('does not go negative when the clock is skewed', () => {
+    expect(daysIdle(new Date(now + 86400000).toISOString(), now)).toBe(0)
+  })
+
+  it('treats a week of silence as stale', () => {
+    expect(STALE_DAYS).toBe(7)
+    expect(daysIdle(new Date(now - 7 * 86400000).toISOString(), now)).toBe(7)
+    expect(daysIdle(new Date(now - 6 * 86400000).toISOString(), now)).toBe(6)
   })
 })
 

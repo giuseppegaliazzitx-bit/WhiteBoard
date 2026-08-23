@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   parseQuery,
   classifyToken,
@@ -46,6 +46,7 @@ describe('parseQuery', () => {
       tags: ['infra'],
       people: ['sam'],
       stages: ['done'],
+      flags: [],
     })
   })
 
@@ -73,7 +74,7 @@ describe('parseQuery', () => {
 
   it('returns an empty parse for junk input', () => {
     for (const junk of ['', '   ', null, undefined, 42]) {
-      expect(parseQuery(junk)).toEqual({ text: [], tags: [], people: [], stages: [] })
+      expect(parseQuery(junk)).toEqual({ text: [], tags: [], people: [], stages: [], flags: [] })
     }
   })
 })
@@ -140,6 +141,22 @@ describe('prefix filters', () => {
 
   it('filters by stage', () => {
     expect(search('is:problem')).toEqual(['a', 'b'])
+  })
+
+  it('filters unassigned cards', () => {
+    expect(search('is:unassigned')).toEqual(['b'])
+  })
+
+  it('filters stale open cards', () => {
+    const now = Date.parse('2026-08-23T12:00:00Z')
+    const iso = (days) => new Date(now - days * 86400000).toISOString()
+    const stale = card({ id: 's', title: 'Idle', status: 'progress', updated_at: iso(8) })
+    const fresh = card({ id: 'f', title: 'Moving', status: 'progress', updated_at: iso(1) })
+    const doneOld = card({ id: 'x', title: 'Finished', status: 'done', updated_at: iso(30) })
+    // daysIdle uses Date.now(); pin it so the fixture is stable.
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(now)
+    expect(ids(applyFilters([stale, fresh, doneOld], { query: 'is:stale' }))).toEqual(['s'])
+    spy.mockRestore()
   })
 
   it('ORs repeated prefixes of the same kind', () => {
@@ -243,6 +260,13 @@ describe('describeFilters', () => {
     const chips = describeFilters({ query: 'tag:infra', people: ['Jo Park'] })
     expect(chips.map((c) => c.kind)).toEqual(['person', 'tag'])
   })
+
+  it('describes flag filters', () => {
+    expect(describeFilters({ query: 'is:stale is:unassigned' }).map((c) => c.label)).toEqual([
+      'is:stale',
+      'is:unassigned',
+    ])
+  })
 })
 
 describe('classifyToken', () => {
@@ -251,6 +275,8 @@ describe('classifyToken', () => {
     expect(classifyToken('is:done')).toEqual({ kind: 'stage', value: 'done' })
     expect(classifyToken('@sam')).toEqual({ kind: 'mention', value: 'sam' })
     expect(classifyToken('csv')).toEqual({ kind: 'text', value: 'csv' })
+    expect(classifyToken('is:unassigned')).toEqual({ kind: 'flag', value: 'unassigned' })
+    expect(classifyToken('is:stale')).toEqual({ kind: 'flag', value: 'stale' })
   })
 
   it('resolves a stage alias to the real stage', () => {

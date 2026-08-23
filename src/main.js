@@ -22,7 +22,7 @@ import { plural } from './ui/format.js'
 import { createStore } from './store/index.js'
 import { createSync } from './sync.js'
 import { groupByStage, peopleFrom, progressOf, tagsFrom } from './selectors.js'
-import { applyFilters, isFiltering, describeFilters, removeFromQuery } from './filters.js'
+import { applyFilters, isFiltering, describeFilters, removeFromQuery, parseQuery } from './filters.js'
 import { STAGE_IDS, getStage, stageIndex } from './model.js'
 import {
   sortByPosition,
@@ -129,7 +129,7 @@ async function createCard(status = DEFAULT_STAGE, where = 'top') {
     const created = await store.create({ title: '', status, position })
     cards = [...cards, created]
     render()
-    detail.open(created)
+    openCard(created)
   } catch (err) {
     errorToast(err, 'Could not create the card.')
   }
@@ -229,9 +229,21 @@ const view = createBoardView(document.getElementById('board'), {
     // second line of defence so a drop can never also open the card.
     if (drag.isDragging) return
     const card = find(id)
-    if (card) detail.open(card)
+    if (card) openCard(card)
   },
   onAdd: (status, where) => createCard(status, where),
+  onAdvance: (id) => {
+    const card = find(id)
+    if (!card) return
+    const next = STAGE_IDS[stageIndex(card.status) + 1]
+    if (!next) return
+    moveCard(id, next, columnCards(next, id).length)
+  },
+  onClaim: (id) => claimCard(id),
+  onFilterTag: (tag) => toggleQueryToken('tag', String(tag).toLowerCase(), `tag:${String(tag).toLowerCase()}`),
+  onFilterStale: () => toggleQueryToken('flag', 'stale', 'is:stale'),
+  getMe: () => (identity.isDefault ? '' : identity.name),
+  onHideDone: () => render(),
 })
 
 const detail = createDetail({
@@ -239,6 +251,9 @@ const detail = createDetail({
   onPatch: patchCard,
   onDelete: deleteCard,
   onError: (err) => errorToast(err),
+  onClose: () => {
+    if (parseHash().cardId) replaceHash(`#${currentView}`)
+  },
   makeNote: (text) => makeNote(identity.name, text),
   getPeople: () => peopleFrom(cards, people),
   getTags: () => tagsFrom(cards),
@@ -439,6 +454,42 @@ async function deleteSheet(id, { record = true, confirm = true } = {}) {
   }
 }
 
+function parseHash(raw = location.hash) {
+  const value = String(raw || '').replace(/^#/, '')
+  const cardMatch = value.match(/^c\/([^/]+)$/)
+  if (cardMatch) return { view: 'board', cardId: decodeURIComponent(cardMatch[1]) }
+  const view = VIEWS.includes(value) ? value : VIEW_ALIAS[value] || 'board'
+  return { view, cardId: null }
+}
+
+function replaceHash(hash) {
+  if (location.hash === hash) return
+  try {
+    history.replaceState(null, '', hash)
+  } catch {
+    /* ignore: some embedded previews block history */
+  }
+}
+
+function openCard(card, opts) {
+  detail.open(card, opts)
+  if (currentView !== 'board') setView('board')
+  replaceHash(`#c/${encodeURIComponent(card.id)}`)
+}
+
+async function claimCard(id) {
+  const card = find(id)
+  const name = identity.name
+  if (!card || identity.isDefault || !name) return
+  if (card.assignees.some((a) => personKey(a) === personKey(name))) return
+  try {
+    await patchCard(id, { assignees: [...card.assignees, name] })
+    announce(card.assignees.length ? `Joined "${card.title.trim() || 'Untitled'}"` : `Took "${card.title.trim() || 'Untitled'}"`)
+  } catch (err) {
+    errorToast(err, 'Could not take the card.')
+  }
+}
+
 function setView(name) {
   const next = VIEWS.includes(name) ? name : VIEW_ALIAS[name] || 'board'
   currentView = next
@@ -448,11 +499,8 @@ function setView(name) {
     if (el) el.hidden = viewName !== currentView
     document.getElementById(`tab-${viewName}`)?.setAttribute('aria-selected', String(currentView === viewName))
   }
-  try {
-    history.replaceState(null, '', `#${currentView}`)
-  } catch {
-    /* ignore: some embedded previews block history */
-  }
+  const hash = detail.currentId && next === 'board' ? `#c/${encodeURIComponent(detail.currentId)}` : `#${currentView}`
+  replaceHash(hash)
   if (next === 'notepad' && store && !sheets.length) createSheet({ record: false })
 }
 
@@ -532,10 +580,46 @@ function renderProgress(shown, filtering) {
 
 const MAX_PEOPLE_SHOWN = 5
 
+function queryHas(kind, value) {
+  const parsed = parseQuery(filters.query)
+  if (kind === 'flag') return parsed.flags.includes(value)
+  if (kind === 'tag') return parsed.tags.includes(value)
+  return false
+}
+
+function flagChip(label, flag, title) {
+  return h('button', {
+    class: 'people__chip',
+    type: 'button',
+    'aria-pressed': String(queryHas('flag', flag)),
+    title,
+    text: label,
+    onclick: () => toggleQueryToken('flag', flag, `is:${flag}`),
+  })
+}
+
 function renderPeople() {
   const roster = peopleFrom(cards, people)
   clear(peopleEl)
 
+  if (!identity.isDefault) {
+    const mineOn = filters.people.some((n) => personKey(n) === personKey(identity.name))
+    peopleEl.appendChild(
+      h('button', {
+        class: 'people__chip',
+        type: 'button',
+        'aria-pressed': String(mineOn),
+        title: 'Show cards assigned to you',
+        text: 'Mine',
+        onclick: () => togglePerson(identity.name),
+      }),
+    )
+  }
+
+  peopleEl.appendChild(flagChip('Free', 'unassigned', 'Cards with nobody on them'))
+  peopleEl.appendChild(flagChip('Stale', 'stale', 'Open cards sitting idle'))
+
+  let firstAvatar = true
   for (const person of roster.slice(0, MAX_PEOPLE_SHOWN)) {
     const active = filters.people.some((n) => personKey(n) === personKey(person.name))
     const chip = avatar(person.name, 'avatar--sm')
@@ -545,7 +629,7 @@ function renderPeople() {
       h(
         'button',
         {
-          class: 'people__btn',
+          class: `people__btn${firstAvatar ? ' people__btn--lead' : ''}`,
           type: 'button',
           'aria-pressed': String(active),
           title: person.count
@@ -557,6 +641,7 @@ function renderPeople() {
         chip,
       ),
     )
+    firstAvatar = false
   }
 
   if (roster.length > MAX_PEOPLE_SHOWN) {
@@ -608,6 +693,11 @@ function togglePerson(name) {
   if (index === -1) filters.people.push(name)
   else filters.people.splice(index, 1)
   render()
+}
+
+function toggleQueryToken(kind, value, token) {
+  if (queryHas(kind, value)) setQuery(removeFromQuery(filters.query, { kind, value }), { syncInput: true })
+  else setQuery(`${filters.query} ${token}`.trim(), { syncInput: true })
 }
 
 function removeChip(chip) {
@@ -697,6 +787,7 @@ document.getElementById('btn-identity').addEventListener('click', async () => {
 identity.onChange((name) => {
   renderIdentity()
   registerPerson(name)
+  render()
   // Suggestions and note ownership both key off the name.
   if (detail.currentId) {
     const card = find(detail.currentId)
@@ -708,7 +799,16 @@ document.getElementById('tab-board')?.addEventListener('click', () => setView('b
 document.getElementById('tab-whiteboard')?.addEventListener('click', () => setView('whiteboard'))
 document.getElementById('tab-notepad')?.addEventListener('click', () => setView('notepad'))
 window.addEventListener('hashchange', () => {
-  setView(location.hash.replace('#', ''))
+  const loc = parseHash()
+  if (loc.view !== currentView) setView(loc.view)
+  if (loc.cardId) {
+    if (detail.currentId !== loc.cardId) {
+      const card = find(loc.cardId)
+      if (card) openCard(card)
+    }
+  } else if (detail.currentId) {
+    detail.close()
+  }
 })
 
 async function registerPerson(name) {
@@ -755,6 +855,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'n' && currentView === 'board') {
     e.preventDefault()
     createCard(DEFAULT_STAGE, 'top')
+  } else if (e.key === 't' && currentView === 'board' && focusedCard) {
+    e.preventDefault()
+    claimCard(focusedCard.dataset.id)
   } else if (e.key === '/') {
     e.preventDefault()
     searchEl.focus()
@@ -796,7 +899,12 @@ async function boot() {
   await identity.ensure()
   renderIdentity()
   await registerPerson(identity.name)
-  setView(location.hash.replace('#', ''))
+  const loc = parseHash()
+  setView(loc.view)
+  if (loc.cardId) {
+    const card = find(loc.cardId)
+    if (card) openCard(card)
+  }
 }
 
 // Release the realtime channel promptly rather than waiting for a socket timeout.

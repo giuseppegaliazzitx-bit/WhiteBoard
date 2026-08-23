@@ -220,6 +220,16 @@ export function createDetail(deps) {
     })
 
     const stamp = h('span', { class: 'drawer__stamp' })
+    const copyBtn = h(
+      'button',
+      {
+        class: 'btn btn--ghost',
+        type: 'button',
+        onclick: copyCardLink,
+      },
+      icon('copy'),
+      h('span', { text: 'Copy link' }),
+    )
 
     const panel = h(
       'aside',
@@ -286,6 +296,7 @@ export function createDetail(deps) {
           icon('trash'),
           h('span', { text: 'Delete' }),
         ),
+        copyBtn,
         stamp,
       ),
     )
@@ -295,6 +306,7 @@ export function createDetail(deps) {
     els = {
       panel, scrim, saved, eyebrow, title, stageButtons, tag, tagList, body,
       chips, assigneeInput, assigneeList, suggestions, notes, notesLabel, noteInput, notePost, stamp, bodyLinks,
+      copyBtn,
     }
     return els
   }
@@ -343,6 +355,43 @@ export function createDetail(deps) {
     })
     if (!ok) return
     await commit({ notes: card.notes.filter((n) => n.id !== noteId) })
+  }
+
+  function cardUrl() {
+    if (!card) return ''
+    return new URL(`#c/${encodeURIComponent(card.id)}`, location.href).href
+  }
+
+  async function copyCardLink() {
+    const url = cardUrl()
+    if (!url || !els?.copyBtn) return
+    const label = els.copyBtn.querySelector('span')
+    let copied = false
+    try {
+      await navigator.clipboard.writeText(url)
+      copied = true
+    } catch {
+      try {
+        const ta = document.createElement('textarea')
+        ta.value = url
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.left = '-9999px'
+        document.body.appendChild(ta)
+        ta.select()
+        copied = document.execCommand('copy')
+        ta.remove()
+      } catch {
+        /* ignore */
+      }
+    }
+    if (label) label.textContent = copied ? 'Copied' : url
+    window.setTimeout(() => {
+      if (els?.copyBtn) {
+        const span = els.copyBtn.querySelector('span')
+        if (span) span.textContent = 'Copy link'
+      }
+    }, 1600)
   }
 
   async function requestDelete() {

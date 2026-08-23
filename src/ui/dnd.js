@@ -176,6 +176,8 @@ export function createDragController({ root, layer, onMove, onCancel }) {
   function onPointerDown(e) {
     // Primary button only, and never start a drag from inside a form control.
     if (e.button !== 0 || drag) return
+    const control = e.target.closest?.('button, a, textarea, input')
+    if (control && !control.classList.contains('card')) return
     const source = e.target.closest?.('.card')
     if (!source || !root.contains(source)) return
 

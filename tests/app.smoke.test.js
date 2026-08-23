@@ -219,3 +219,36 @@ describe('person filter', () => {
     expect(allCards()).toHaveLength(6)
   })
 })
+
+describe('board extras', () => {
+  it('filters unassigned cards from the Free chip', async () => {
+    click(buttonWithText(document.getElementById('people'), 'Free'))
+    await waitFor(() => document.getElementById('filter-bar').hidden === false, { label: 'the Free filter' })
+    expect(titles()).toContain('Nobody knows who owns the on-call rota')
+    expect(titles()).not.toContain('Rewrite the CSV parser')
+    click(document.getElementById('filter-clear'))
+    await waitFor(() => document.getElementById('filter-bar').hidden === true, { label: 'the board to come back' })
+  })
+
+  it('takes an unassigned card without opening the drawer', async () => {
+    const take = [...document.querySelectorAll('.card__take')].find((b) => b.textContent === 'Take')
+    expect(take).toBeTruthy()
+    const title = take.closest('.card').querySelector('.card__title').textContent
+    click(take)
+    await waitFor(() => {
+      const node = allCards().find((c) => c.querySelector('.card__title').textContent === title)
+      return Boolean(node && !node.querySelector('.card__take'))
+    }, { label: 'the Take button to go' })
+    expect(document.querySelector('#detail-root .drawer')).toBeFalsy()
+  })
+
+  it('filters by clicking a tag on a card', async () => {
+    const tag = document.querySelector('.tag--btn')
+    expect(tag).toBeTruthy()
+    click(tag)
+    await waitFor(() => document.getElementById('filter-bar').hidden === false, { label: 'the tag filter' })
+    expect(document.getElementById('filter-chips').textContent).toMatch(/tag:/)
+    click(document.getElementById('filter-clear'))
+    await waitFor(() => document.getElementById('filter-bar').hidden === true, { label: 'the clear' })
+  })
+})

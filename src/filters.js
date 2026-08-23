@@ -8,11 +8,12 @@
  *   tag:infra          cards tagged infra
  *   @sam               cards assigned to someone whose name contains "sam"
  *   is:done            cards in the Done column
+ *   is:unassigned      cards with nobody on them
  *
  * Terms combine with AND. Two of the same prefix combine with OR, so
  * `is:idea is:progress` means "either", which is what you want from it.
  */
-import { personKey, STAGE_IDS, isStage } from './model.js'
+import { personKey, STAGE_IDS, isStage, DONE_STAGE, daysIdle, STALE_DAYS } from './model.js'
 
 const STAGE_ALIASES = {
   'in-progress': 'progress',
@@ -27,7 +28,7 @@ const STAGE_ALIASES = {
  * What one token means. Single source of truth, so parsing a query and
  * removing a chip from it can never disagree about which token is which.
  *
- * @returns {{ kind: 'tag'|'stage'|'mention'|'text', value: string }}
+ * @returns {{ kind: 'tag'|'stage'|'mention'|'flag'|'text', value: string }}
  */
 export function classifyToken(token) {
   const lower = String(token).toLowerCase()
@@ -37,6 +38,12 @@ export function classifyToken(token) {
   }
   if (lower.startsWith('is:') && lower.length > 3) {
     const value = lower.slice(3)
+    if (value === 'unassigned' || value === 'free' || value === 'none') {
+      return { kind: 'flag', value: 'unassigned' }
+    }
+    if (value === 'stale' || value === 'idle') {
+      return { kind: 'flag', value: 'stale' }
+    }
     const stage = STAGE_ALIASES[value] || value
     // An unknown is: value falls through to free text rather than silently
     // matching nothing.
@@ -54,10 +61,16 @@ function tokenize(raw) {
   return raw.trim().split(/\s+/).filter(Boolean)
 }
 
-/** @returns {{ text: string[], tags: string[], people: string[], stages: string[] }} */
+/** @returns {{ text: string[], tags: string[], people: string[], stages: string[], flags: string[] }} */
 export function parseQuery(raw) {
-  const parsed = { text: [], tags: [], people: [], stages: [] }
-  const bucket = { tag: parsed.tags, stage: parsed.stages, mention: parsed.people, text: parsed.text }
+  const parsed = { text: [], tags: [], people: [], stages: [], flags: [] }
+  const bucket = {
+    tag: parsed.tags,
+    stage: parsed.stages,
+    mention: parsed.people,
+    flag: parsed.flags,
+    text: parsed.text,
+  }
 
   for (const token of tokenize(raw)) {
     const { kind, value } = classifyToken(token)
@@ -107,6 +120,12 @@ export function matchesQuery(card, parsed) {
     if (!parsed.people.some((p) => names.some((n) => n.includes(p)))) return false
   }
 
+  if (parsed.flags.includes('unassigned') && card.assignees.length) return false
+  if (parsed.flags.includes('stale')) {
+    if (card.status === DONE_STAGE) return false
+    if (daysIdle(card.updated_at) < STALE_DAYS) return false
+  }
+
   if (parsed.text.length) {
     const hay = haystack(card)
     if (!parsed.text.every((term) => hay.includes(term))) return false
@@ -125,7 +144,8 @@ export function matchesQuery(card, parsed) {
 export function applyFilters(cards, { query = '', people = [] } = {}) {
   const parsed = parseQuery(query)
   const wanted = new Set(people.map(personKey).filter(Boolean))
-  const hasQuery = parsed.text.length || parsed.tags.length || parsed.people.length || parsed.stages.length
+  const hasQuery =
+    parsed.text.length || parsed.tags.length || parsed.people.length || parsed.stages.length || parsed.flags.length
 
   if (!hasQuery && !wanted.size) return cards
 
@@ -141,7 +161,9 @@ export function applyFilters(cards, { query = '', people = [] } = {}) {
 export function isFiltering({ query = '', people = [] } = {}) {
   if (people.length) return true
   const parsed = parseQuery(query)
-  return Boolean(parsed.text.length || parsed.tags.length || parsed.people.length || parsed.stages.length)
+  return Boolean(
+    parsed.text.length || parsed.tags.length || parsed.people.length || parsed.stages.length || parsed.flags.length,
+  )
 }
 
 /** Human-readable chips for the filter bar. */
@@ -152,6 +174,7 @@ export function describeFilters({ query = '', people = [] } = {}) {
   for (const name of people) chips.push({ kind: 'person', value: name, label: name })
   for (const tag of parsed.tags) chips.push({ kind: 'tag', value: tag, label: `tag:${tag}` })
   for (const stage of parsed.stages) chips.push({ kind: 'stage', value: stage, label: `is:${stage}` })
+  for (const flag of parsed.flags) chips.push({ kind: 'flag', value: flag, label: `is:${flag}` })
   for (const p of parsed.people) chips.push({ kind: 'mention', value: p, label: `@${p}` })
   if (parsed.text.length) {
     chips.push({ kind: 'text', value: parsed.text.join(' '), label: `"${parsed.text.join(' ')}"` })
@@ -164,5 +187,7 @@ export function describeFilters({ query = '', people = [] } = {}) {
 export const QUERY_HELP = [
   { token: 'tag:', hint: 'cards with a tag' },
   { token: '@', hint: 'cards assigned to someone' },
+  { token: 'is:unassigned', hint: 'cards with nobody on them' },
+  { token: 'is:stale', hint: 'open cards sitting idle' },
   ...STAGE_IDS.map((id) => ({ token: `is:${id}`, hint: `cards in ${id}` })),
 ]

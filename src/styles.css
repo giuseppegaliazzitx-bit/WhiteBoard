@@ -339,6 +339,14 @@ body[data-view="notepad"] .board { display: none !important; }
   font-variant-numeric: tabular-nums;
 }
 .column__add { margin-left: auto; }
+.column__hide {
+  height: 22px; padding: 0 7px;
+  font-size: 11px; color: var(--text-2);
+}
+.column.is-busy .column__count {
+  background: color-mix(in srgb, var(--stage-idea) 28%, var(--surface-3));
+  color: var(--text);
+}
 
 .column__body {
   flex: 1 1 auto; min-height: 0;
@@ -395,9 +403,44 @@ body[data-view="notepad"] .board { display: none !important; }
   overflow-wrap: anywhere;
 }
 .card__title--empty { color: var(--text-3); font-style: italic; font-weight: 450; }
+.card.is-stale { border-color: color-mix(in srgb, var(--stage-idea) 45%, var(--border)); }
 .card__meta { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .card__meta:empty { display: none; }
 .card__spacer { flex: 1 1 auto; }
+.card__advance {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; margin-left: 2px; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: var(--surface-2); color: var(--text-2);
+  cursor: pointer;
+}
+.card__advance:hover { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.card__advance svg { width: 12px; height: 12px; }
+.card__take {
+  height: 20px; padding: 0 7px;
+  border: 1px dashed var(--border-strong); border-radius: 99px;
+  background: transparent; color: var(--text-2);
+  font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.card__take:hover { border-style: solid; border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.badge--stale { color: var(--stage-idea); font-weight: 600; }
+.badge--btn, .tag--btn {
+  appearance: none; border: none; font: inherit; color: inherit; cursor: pointer;
+}
+.badge--btn { background: transparent; padding: 0; }
+.tag--btn:hover { background: var(--accent-soft); color: var(--text); }
+
+.people__chip {
+  height: 22px; padding: 0 8px; margin-right: 6px;
+  border: 1px solid var(--border); border-radius: 99px;
+  background: var(--surface); color: var(--text-2);
+  font-size: 11px; font-weight: 600; cursor: pointer;
+}
+.people__chip:hover { border-color: var(--border-strong); color: var(--text); }
+.people__chip[aria-pressed="true"] {
+  background: var(--accent-soft); border-color: var(--accent); color: var(--text);
+}
+.people__btn--lead { margin-left: 0; }
 
 .tag {
   display: inline-flex; align-items: center; height: 19px; padding: 0 7px;

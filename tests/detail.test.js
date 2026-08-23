@@ -75,6 +75,18 @@ describe('opening', () => {
     expect(document.querySelectorAll('#detail-root .drawer')).toHaveLength(1)
     expect(detail.currentId).toBe('c2')
   })
+
+  it('copies a deep link to the card', async () => {
+    const writeText = vi.fn(async () => {})
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    setup()
+    click(buttonWithText(panel(), 'Copy link'))
+    await Promise.resolve()
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(writeText.mock.calls[0][0]).toMatch(/#c\/c1$/)
+    expect(buttonWithText(panel(), 'Copied')).toBeTruthy()
+    vi.unstubAllGlobals()
+  })
 })
 
 describe('text autosave', () => {

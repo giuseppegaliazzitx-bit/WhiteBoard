@@ -18,6 +18,16 @@ export const STAGE_IDS = STAGES.map((s) => s.id)
 export const DEFAULT_STAGE = 'problem'
 export const DONE_STAGE = 'done'
 
+/** Open cards idle this many days are treated as stale. */
+export const STALE_DAYS = 7
+const DAY_MS = 24 * 60 * 60 * 1000
+
+export function daysIdle(iso, now = Date.now()) {
+  const then = Date.parse(iso)
+  if (Number.isNaN(then)) return 0
+  return Math.floor(Math.max(0, now - then) / DAY_MS)
+}
+
 /** Field caps. Enforced here *and* as maxlength on inputs -- belt and braces,
  *  because a paste can exceed maxlength in some browsers and realtime rows
  *  never passed through our inputs at all. */
@@ -43,6 +53,13 @@ export function getStage(id) {
 export function stageIndex(id) {
   const i = STAGE_IDS.indexOf(id)
   return i === -1 ? 0 : i
+}
+
+/** Next column, or null if the card is already Done. */
+export function nextStageId(id) {
+  const i = STAGE_IDS.indexOf(id)
+  if (i === -1 || i >= STAGE_IDS.length - 1) return null
+  return STAGE_IDS[i + 1]
 }
 
 /** Crypto-strong where available; the fallback only has to be collision-free

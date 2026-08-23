@@ -1,6 +1,9 @@
 import { h, clear, icon } from './dom.js'
 import { renderCard } from './card.js'
-import { STAGES } from '../model.js'
+import { STAGES, DONE_STAGE } from '../model.js'
+
+const WIP_SOFT = 4
+const HIDE_DONE_KEY = 'board:hide-done'
 
 /**
  * The four columns.
@@ -12,6 +15,7 @@ import { STAGES } from '../model.js'
  */
 export function createBoardView(root, handlers) {
   const columns = new Map()
+  let hideDone = readHideDone()
 
   for (const stage of STAGES) {
     const count = h('span', { class: 'column__count', text: '0' })
@@ -45,23 +49,37 @@ export function createBoardView(root, handlers) {
       h('span', { text: 'Add a card' }),
     )
 
+    const hideBtn =
+      stage.id === DONE_STAGE
+        ? h('button', {
+            class: 'btn btn--tiny column__hide',
+            type: 'button',
+            onclick: () => {
+              hideDone = !hideDone
+              writeHideDone(hideDone)
+              handlers.onHideDone?.(hideDone)
+            },
+          })
+        : null
+
+    const headChildren = [
+      h('span', { class: 'column__swatch' }),
+      h('h2', { class: 'column__name', text: stage.name, title: stage.blurb }),
+      count,
+      hideBtn,
+      addTop,
+    ]
+
     const column = h(
       'section',
       { class: 'column', dataset: { stage: stage.id }, style: { '--dot': `var(--stage-${stage.id})` } },
-      h(
-        'header',
-        { class: 'column__head' },
-        h('span', { class: 'column__swatch' }),
-        h('h2', { class: 'column__name', text: stage.name, title: stage.blurb }),
-        count,
-        addTop,
-      ),
+      h('header', { class: 'column__head' }, ...headChildren),
       body,
       h('div', { class: 'column__foot' }, addBottom),
     )
 
     root.appendChild(column)
-    columns.set(stage.id, { column, body, count })
+    columns.set(stage.id, { column, body, count, hideBtn })
   }
 
   /**
@@ -70,14 +88,30 @@ export function createBoardView(root, handlers) {
    */
   function render(byStage, opts = {}) {
     for (const stage of STAGES) {
-      const { body, count } = columns.get(stage.id)
+      const { column, body, count, hideBtn } = columns.get(stage.id)
       const cards = byStage.get(stage.id) || []
       const scrollTop = body.scrollTop
+      const tuckDone = stage.id === DONE_STAGE && hideDone && !opts.filtering && cards.length > 0
 
       count.textContent = String(cards.length)
+      const busy = stage.id === 'progress' && cards.length >= WIP_SOFT
+      column.classList.toggle('is-busy', busy)
+      count.title = busy ? `${cards.length} in progress — a lot to have on the go at once` : ''
+      if (hideBtn) {
+        hideBtn.hidden = !cards.length
+        hideBtn.textContent = tuckDone ? `Show ${cards.length}` : 'Hide'
+      }
+
       clear(body)
 
-      if (!cards.length) {
+      if (tuckDone) {
+        body.appendChild(
+          h('p', {
+            class: 'column__empty',
+            text: `${cards.length} finished — tucked away so the board stays scannable`,
+          }),
+        )
+      } else if (!cards.length) {
         body.appendChild(
           h('p', {
             class: 'column__empty',
@@ -86,7 +120,7 @@ export function createBoardView(root, handlers) {
         )
       } else {
         for (const card of cards) {
-          const node = renderCard(card, handlers)
+          const node = renderCard(card, { ...handlers, me: handlers.getMe?.() || '' })
           node.setAttribute('role', 'listitem')
           body.appendChild(node)
         }
@@ -110,4 +144,20 @@ export function createBoardView(root, handlers) {
   }
 
   return { render, columns, cardNode, flash }
+}
+
+function readHideDone() {
+  try {
+    return localStorage.getItem(HIDE_DONE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeHideDone(value) {
+  try {
+    localStorage.setItem(HIDE_DONE_KEY, value ? '1' : '0')
+  } catch {
+    /* private mode */
+  }
 }
