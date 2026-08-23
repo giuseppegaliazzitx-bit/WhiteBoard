@@ -1,5 +1,6 @@
 import { normalizeCard, normalizePerson, newId, personKey } from '../model.js'
 import { normalizeCanvasObject } from '../canvas-model.js'
+import { normalizeSheet } from '../sheet-model.js'
 
 /**
  * Supabase adapter. Implements the same interface as the localStorage one --
@@ -15,10 +16,12 @@ import { normalizeCanvasObject } from '../canvas-model.js'
 const TABLE = 'cards'
 const PEOPLE_TABLE = 'people'
 const CANVAS_TABLE = 'canvas_objects'
+const SHEETS_TABLE = 'sheets'
 
 /** Columns a client is allowed to write. Everything else is server-owned. */
 const WRITABLE = ['title', 'body', 'status', 'tag', 'assignees', 'notes', 'position']
 const CANVAS_WRITABLE = ['kind', 'x', 'y', 'w', 'h', 'z', 'data']
+const SHEET_WRITABLE = ['title', 'body', 'position']
 
 /**
  * Keep only writable keys, and run each through the same normalizer used on
@@ -39,6 +42,15 @@ function pickCanvasWritable(patch) {
   const normalized = normalizeCanvasObject(patch)
   const out = {}
   for (const key of CANVAS_WRITABLE) {
+    if (key in patch) out[key] = normalized[key]
+  }
+  return out
+}
+
+function pickSheetWritable(patch) {
+  const normalized = normalizeSheet(patch)
+  const out = {}
+  for (const key of SHEET_WRITABLE) {
     if (key in patch) out[key] = normalized[key]
   }
   return out
@@ -113,6 +125,11 @@ export function createSupabaseStore({ client, boardId = 'main' }) {
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: CANVAS_TABLE, filter: `board=eq.${boardId}` },
+        onChange,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: SHEETS_TABLE, filter: `board=eq.${boardId}` },
         onChange,
       )
       .subscribe(setStatus)
@@ -231,6 +248,41 @@ export function createSupabaseStore({ client, boardId = 'main' }) {
     async removeCanvasObject(id) {
       const { error } = await client.from(CANVAS_TABLE).delete().eq('id', id)
       if (error) throw explain(error, 'Could not delete that.')
+    },
+
+    async listSheets() {
+      const { data, error } = await client.from(SHEETS_TABLE).select('*').eq('board', boardId)
+      if (error) throw explain(error, 'Could not load sheets.')
+      return (data || []).map(normalizeSheet)
+    },
+
+    async createSheet(patch) {
+      const row = {
+        ...pickSheetWritable(patch),
+        id: patch.id || newId(),
+        board: boardId,
+      }
+      const { data, error } = await client.from(SHEETS_TABLE).insert(row).select().single()
+      if (error) throw explain(error, 'Could not create the sheet.')
+      return normalizeSheet(data)
+    },
+
+    async updateSheet(id, patch) {
+      const changes = pickSheetWritable(patch)
+      if (!Object.keys(changes).length) {
+        const { data, error } = await client.from(SHEETS_TABLE).select('*').eq('id', id).single()
+        if (error) throw explain(error, 'That sheet no longer exists.')
+        return normalizeSheet(data)
+      }
+      const { data, error } = await client.from(SHEETS_TABLE).update(changes).eq('id', id).select().single()
+      if (error) throw explain(error, 'Could not save the sheet.')
+      if (!data) throw new Error('That sheet no longer exists.')
+      return normalizeSheet(data)
+    },
+
+    async removeSheet(id) {
+      const { error } = await client.from(SHEETS_TABLE).delete().eq('id', id)
+      if (error) throw explain(error, 'Could not delete the sheet.')
     },
 
     /**

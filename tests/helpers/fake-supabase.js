@@ -35,6 +35,12 @@ const DEFAULTS = {
     data: {},
     board: 'main',
   },
+  sheets: {
+    title: '',
+    body: '',
+    position: 1000,
+    board: 'main',
+  },
 }
 
 const clone = (v) => JSON.parse(JSON.stringify(v))
@@ -183,7 +189,7 @@ class FakeChannel {
   }
 }
 
-export function createFakeSupabase({ rows = [], people = [], canvas = [], clock } = {}) {
+export function createFakeSupabase({ rows = [], people = [], canvas = [], sheets = [], clock } = {}) {
   let tick = 0
 
   const db = {
@@ -191,6 +197,7 @@ export function createFakeSupabase({ rows = [], people = [], canvas = [], clock 
       cards: clone(rows),
       people: clone(people),
       canvas_objects: clone(canvas),
+      sheets: clone(sheets),
     },
     channels: new Set(),
     nextError: null,

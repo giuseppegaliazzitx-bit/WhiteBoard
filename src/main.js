@@ -12,8 +12,10 @@ import { createDragController } from './ui/dnd.js'
 import { createDetail } from './ui/detail.js'
 import { createIdentity } from './ui/identity.js'
 import { createPadView } from './ui/pad.js'
+import { createSheetsView } from './ui/sheets.js'
 import { initTheme } from './ui/theme.js'
 import { toast, errorToast } from './ui/toast.js'
+import { confirmDialog } from './ui/modal.js'
 import { h, clear, icon } from './ui/dom.js'
 import { avatar } from './ui/card.js'
 import { plural } from './ui/format.js'
@@ -38,6 +40,9 @@ import {
   DEFAULT_STAGE,
 } from './model.js'
 import { config } from './config.js'
+import { createUndoStack } from './undo.js'
+
+const VIEWS = ['board', 'pad', 'sheets']
 
 const SEED = [
   { title: 'Invoices export drops the last row', status: 'problem', tag: 'billing', assignees: ['Sam Rivera'] },
@@ -65,7 +70,13 @@ let people = []
 /** @type {import('./canvas-model.js').CanvasObject[]} */
 let padObjects = []
 
+/** @type {import('./sheet-model.js').Sheet[]} */
+let sheets = []
+
 let currentView = 'board'
+
+const padUndo = createUndoStack()
+const sheetsUndo = createUndoStack()
 
 /** Active filters. `people` holds full names; the query holds everything else. */
 const filters = { query: '', people: [] }
@@ -246,21 +257,29 @@ const pad = createPadView(document.getElementById('pad'), {
   onError: (err) => errorToast(err),
 })
 
-async function createPadObject(patch) {
+async function createPadObject(patch, { record = true } = {}) {
   try {
     const created = await store.createCanvasObject(patch)
     padObjects = [...padObjects, created]
     pad.render(padObjects)
     if (created.kind === 'sticky' || created.kind === 'text') pad.focusLast(created.kind)
+    if (record) {
+      const id = created.id
+      padUndo.push(() => removePadObject(id, { record: false }))
+    }
     return created
   } catch (err) {
     errorToast(err, 'Could not add that to the pad.')
   }
 }
 
-async function patchPadObject(id, patch) {
+async function patchPadObject(id, patch, { record = true } = {}) {
   const before = padObjects.find((o) => o.id === id)
   if (!before) return
+  if (record) {
+    const snapshot = { x: before.x, y: before.y, w: before.w, h: before.h, data: { ...before.data } }
+    padUndo.push(() => patchPadObject(id, snapshot, { record: false }))
+  }
   const next = { ...before, ...patch, data: patch.data ? { ...before.data, ...patch.data } : before.data }
   padObjects = padObjects.map((o) => (o.id === id ? next : o))
   pad.render(padObjects)
@@ -275,7 +294,8 @@ async function patchPadObject(id, patch) {
   }
 }
 
-async function removePadObject(id) {
+async function removePadObject(id, { record = true } = {}) {
+  const removed = padObjects.find((o) => o.id === id)
   const before = padObjects
   padObjects = padObjects.filter((o) => o.id !== id)
   pad.render(padObjects)
@@ -285,20 +305,103 @@ async function removePadObject(id) {
     padObjects = before
     pad.render(padObjects)
     errorToast(err, 'Could not delete that.')
+    return
+  }
+  if (record && removed) {
+    padUndo.push(() => createPadObject(removed, { record: false }))
+  }
+}
+
+const sheetsView = createSheetsView(document.getElementById('sheets'), {
+  onCreate: () => createSheet(),
+  onPatch: patchSheet,
+  onRemove: deleteSheet,
+})
+
+async function createSheet(patch = {}, { record = true } = {}) {
+  try {
+    const created = await store.createSheet({
+      title: '',
+      body: '',
+      position: positionForAppend(sortByPosition(sheets)),
+      ...patch,
+    })
+    sheets = [...sheets, created]
+    sheetsView.render(sortByPosition(sheets), { selectId: created.id })
+    sheetsView.focusTitle()
+    if (record) {
+      const id = created.id
+      sheetsUndo.push(() => deleteSheet(id, { record: false, confirm: false }))
+    }
+    return created
+  } catch (err) {
+    errorToast(err, 'Could not create the sheet.')
+  }
+}
+
+async function patchSheet(id, patch, { record = true } = {}) {
+  const before = sheets.find((s) => s.id === id)
+  if (!before) return
+  if (record) {
+    const snapshot = { title: before.title, body: before.body }
+    sheetsUndo.push(() => patchSheet(id, snapshot, { record: false }))
+  }
+  const next = { ...before, ...patch }
+  sheets = sheets.map((s) => (s.id === id ? next : s))
+  sheetsView.render(sortByPosition(sheets), { selectId: id })
+  try {
+    const saved = await store.updateSheet(id, patch)
+    sheets = sheets.map((s) => (s.id === id ? saved : s))
+    sheetsView.render(sortByPosition(sheets), { selectId: id })
+  } catch (err) {
+    sheets = sheets.map((s) => (s.id === id ? before : s))
+    sheetsView.render(sortByPosition(sheets), { selectId: id })
+    errorToast(err, 'Could not save the sheet.')
+  }
+}
+
+async function deleteSheet(id, { record = true, confirm = true } = {}) {
+  const removed = sheets.find((s) => s.id === id)
+  if (!removed) return
+  if (confirm) {
+    const ok = await confirmDialog({
+      title: 'Delete this sheet?',
+      body: removed.title.trim()
+        ? `"${removed.title.trim()}" will be removed.`
+        : 'This untitled sheet will be removed.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
+  }
+  const before = sheets
+  sheets = sheets.filter((s) => s.id !== id)
+  sheetsView.render(sortByPosition(sheets))
+  try {
+    await store.removeSheet(id)
+  } catch (err) {
+    sheets = before
+    sheetsView.render(sortByPosition(sheets), { selectId: id })
+    errorToast(err, 'Could not delete the sheet.')
+    return
+  }
+  if (record) {
+    sheetsUndo.push(() => createSheet(removed, { record: false }))
   }
 }
 
 function setView(name) {
-  currentView = name === 'pad' ? 'pad' : 'board'
+  const next = VIEWS.includes(name) ? name : 'board'
+  currentView = next
   document.body.dataset.view = currentView
   document.getElementById('board').hidden = currentView !== 'board'
   document.getElementById('pad').hidden = currentView !== 'pad'
-  const boardTab = document.getElementById('tab-board')
-  const padTab = document.getElementById('tab-pad')
-  if (boardTab) boardTab.setAttribute('aria-selected', String(currentView === 'board'))
-  if (padTab) padTab.setAttribute('aria-selected', String(currentView === 'pad'))
-  if (currentView === 'pad') history.replaceState(null, '', '#pad')
-  else history.replaceState(null, '', '#board')
+  const sheetsEl = document.getElementById('sheets')
+  if (sheetsEl) sheetsEl.hidden = currentView !== 'sheets'
+  for (const viewName of VIEWS) {
+    document.getElementById(`tab-${viewName}`)?.setAttribute('aria-selected', String(currentView === viewName))
+  }
+  history.replaceState(null, '', `#${currentView}`)
 }
 
 // ------------------------------------------------------------------ chrome
@@ -360,6 +463,7 @@ function render() {
   renderFilterBar(shown, filtering)
   renderProgress(shown, filtering)
   pad.render(padObjects)
+  sheetsView.render(sortByPosition(sheets))
 }
 
 function renderProgress(shown, filtering) {
@@ -476,6 +580,11 @@ async function refresh() {
   } catch {
     padObjects = []
   }
+  try {
+    sheets = await store.listSheets()
+  } catch {
+    sheets = []
+  }
   render()
 
   // Highlight cards that appeared since the last read. Skipped on the first
@@ -545,8 +654,9 @@ identity.onChange((name) => {
 
 document.getElementById('tab-board')?.addEventListener('click', () => setView('board'))
 document.getElementById('tab-pad')?.addEventListener('click', () => setView('pad'))
+document.getElementById('tab-sheets')?.addEventListener('click', () => setView('sheets'))
 window.addEventListener('hashchange', () => {
-  setView(location.hash === '#pad' ? 'pad' : 'board')
+  setView(location.hash.replace('#', ''))
 })
 
 async function registerPerson(name) {
@@ -579,6 +689,13 @@ document.addEventListener('keydown', (e) => {
       nudgeCard(focusedCard.dataset.id, delta[0], delta[1])
       return
     }
+  }
+
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (currentView === 'pad') padUndo.undo()
+    else if (currentView === 'sheets') sheetsUndo.undo()
+    return
   }
 
   if (e.metaKey || e.ctrlKey || e.altKey) return
@@ -627,7 +744,7 @@ async function boot() {
   await identity.ensure()
   renderIdentity()
   await registerPerson(identity.name)
-  setView(location.hash === '#pad' ? 'pad' : 'board')
+  setView(location.hash.replace('#', ''))
 }
 
 // Release the realtime channel promptly rather than waiting for a socket timeout.

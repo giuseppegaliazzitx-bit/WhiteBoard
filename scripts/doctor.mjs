@@ -162,6 +162,7 @@ async function checkProject({ url, key }) {
   const extras = [
     ['people', 'the people roster'],
     ['canvas_objects', 'the pad'],
+    ['sheets', 'lined sheets'],
   ]
   const ref = projectRef(url)
   for (const [table, label] of extras) {

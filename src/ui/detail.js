@@ -4,6 +4,7 @@ import { avatar } from './card.js'
 import { relativeTime, absoluteTime, plural } from './format.js'
 import { STAGES, getStage, LIMITS, personKey } from '../model.js'
 import { confirmDialog } from './modal.js'
+import { fillLinked, hasLinks } from '../linkify.js'
 
 /** Text fields save this long after the last keystroke. */
 const AUTOSAVE_MS = 450
@@ -145,12 +146,16 @@ export function createDetail(deps) {
       onblur: flush,
     })
 
+    const bodyLinks = h('div', { class: 'field__links' })
     const body = h('textarea', {
       class: 'input',
       placeholder: 'Add more detail…',
       maxlength: String(LIMITS.body),
       'aria-label': 'Description',
-      oninput: (e) => queue({ body: e.target.value }),
+      oninput: (e) => {
+        queue({ body: e.target.value })
+        paintBodyLinks(e.target.value)
+      },
       onblur: flush,
     })
 
@@ -238,7 +243,7 @@ export function createDetail(deps) {
         title,
         h('div', { class: 'field' }, h('span', { class: 'field__label', text: 'Stage' }), stagePicker),
         h('div', { class: 'field' }, h('span', { class: 'field__label', text: 'Tag' }), tag, tagList),
-        h('div', { class: 'field' }, h('span', { class: 'field__label', text: 'Description' }), body),
+        h('div', { class: 'field' }, h('span', { class: 'field__label', text: 'Description' }), body, bodyLinks),
         h(
           'div',
           { class: 'field' },
@@ -289,7 +294,7 @@ export function createDetail(deps) {
 
     els = {
       panel, scrim, saved, eyebrow, title, stageButtons, tag, tagList, body,
-      chips, assigneeInput, assigneeList, suggestions, notes, notesLabel, noteInput, notePost, stamp,
+      chips, assigneeInput, assigneeList, suggestions, notes, notesLabel, noteInput, notePost, stamp, bodyLinks,
     }
     return els
   }
@@ -444,11 +449,26 @@ export function createDetail(deps) {
               mine &&
                 iconButton('trash', 'Delete note', () => deleteNote(note.id), 'note__del icon-btn--danger'),
             ),
-            h('p', { class: 'note__text', text: note.text }),
+            (() => {
+              const p = h('p', { class: 'note__text' })
+              fillLinked(p, note.text)
+              return p
+            })(),
           ),
         ),
       )
     }
+  }
+
+  function paintBodyLinks(text) {
+    const src = text ?? card?.body ?? ''
+    if (!hasLinks(src)) {
+      clear(els.bodyLinks)
+      els.bodyLinks.hidden = true
+      return
+    }
+    els.bodyLinks.hidden = false
+    fillLinked(els.bodyLinks, src)
   }
 
   function renderTagSuggestions() {
@@ -482,6 +502,7 @@ export function createDetail(deps) {
     renderSuggestions()
     renderNotes()
     renderTagSuggestions()
+    paintBodyLinks(card.body)
 
     els.stamp.textContent = `Updated ${relativeTime(card.updated_at)}`
     els.stamp.title = `Created ${absoluteTime(card.created_at)}\nUpdated ${absoluteTime(card.updated_at)}`

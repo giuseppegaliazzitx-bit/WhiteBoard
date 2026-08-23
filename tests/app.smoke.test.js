@@ -90,6 +90,14 @@ describe('boot', () => {
     expect(document.body.dataset.view).toBe('board')
     expect(cardsIn('problem').length).toBeGreaterThan(0)
   })
+
+  it('opens the sheets tab', () => {
+    click(document.getElementById('tab-sheets'))
+    expect(document.body.dataset.view).toBe('sheets')
+    expect(document.getElementById('sheets').hidden).toBe(false)
+    click(document.getElementById('tab-board'))
+    expect(document.body.dataset.view).toBe('board')
+  })
 })
 
 describe('search', () => {

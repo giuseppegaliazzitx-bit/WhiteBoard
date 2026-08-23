@@ -237,3 +237,53 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 alter table public.canvas_objects replica identity full;
+
+-- =============================================================================
+-- Sheets (lined notepad pages)
+-- =============================================================================
+
+create table if not exists public.sheets (
+  id         uuid primary key default gen_random_uuid(),
+  board      text             not null default 'main',
+  title      text             not null default '',
+  body       text             not null default '',
+  position   double precision not null default 1000,
+  created_at timestamptz      not null default now(),
+  updated_at timestamptz      not null default now()
+);
+
+do $$ begin
+  alter table public.sheets
+    add constraint sheets_size_check check (
+      length(title) <= 200 and length(body) <= 100000
+    );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.sheets
+    add constraint sheets_position_finite check (position = position and abs(position) < 1e300);
+exception when duplicate_object then null; end $$;
+
+create index if not exists sheets_board_position_idx
+  on public.sheets (board, position);
+
+drop trigger if exists sheets_touch_updated_at on public.sheets;
+create trigger sheets_touch_updated_at
+  before update on public.sheets
+  for each row execute function public.touch_updated_at();
+
+alter table public.sheets enable row level security;
+
+drop policy if exists "board access" on public.sheets;
+create policy "board access"
+  on public.sheets
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+do $$ begin
+  alter publication supabase_realtime add table public.sheets;
+exception when duplicate_object then null; end $$;
+
+alter table public.sheets replica identity full;

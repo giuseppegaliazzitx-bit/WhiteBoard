@@ -8,10 +8,12 @@
  */
 import { normalizeCard, normalizePerson, newId, personKey } from '../model.js'
 import { normalizeCanvasObject } from '../canvas-model.js'
+import { normalizeSheet } from '../sheet-model.js'
 
 const CARDS_KEY = 'board:cards:v1'
 const PEOPLE_KEY = 'board:people:v1'
 const CANVAS_KEY = 'board:canvas:v1'
+const SHEETS_KEY = 'board:sheets:v1'
 
 function readJsonList(key, normalize) {
   let raw
@@ -63,9 +65,15 @@ export function createLocalStore({ boardId = 'main' } = {}) {
   function writeCanvas(objects) {
     writeJsonList(CANVAS_KEY, objects)
   }
+  function readSheets() {
+    return readJsonList(SHEETS_KEY, normalizeSheet)
+  }
+  function writeSheets(items) {
+    writeJsonList(SHEETS_KEY, items)
+  }
 
   const onStorage = (e) => {
-    if (e.key === CARDS_KEY || e.key === PEOPLE_KEY || e.key === CANVAS_KEY) emit()
+    if (e.key === CARDS_KEY || e.key === PEOPLE_KEY || e.key === CANVAS_KEY || e.key === SHEETS_KEY) emit()
   }
   if (typeof window !== 'undefined') window.addEventListener('storage', onStorage)
 
@@ -167,6 +175,40 @@ export function createLocalStore({ boardId = 'main' } = {}) {
       const all = readCanvas()
       const next = all.filter((o) => o.id !== id)
       if (next.length !== all.length) writeCanvas(next)
+    },
+
+    async listSheets() {
+      return readSheets().filter((s) => s.board === boardId)
+    },
+
+    async createSheet(patch) {
+      const now = new Date().toISOString()
+      const sheet = normalizeSheet({
+        ...patch,
+        id: patch.id || newId(),
+        board: boardId,
+        created_at: now,
+        updated_at: now,
+      })
+      writeSheets([...readSheets(), sheet])
+      return sheet
+    },
+
+    async updateSheet(id, patch) {
+      const all = readSheets()
+      const i = all.findIndex((s) => s.id === id)
+      if (i === -1) throw new Error('That sheet no longer exists.')
+      const { id: _i, board: _b, created_at: _c, ...safe } = patch
+      const next = normalizeSheet({ ...all[i], ...safe, updated_at: new Date().toISOString() })
+      all[i] = next
+      writeSheets(all)
+      return next
+    },
+
+    async removeSheet(id) {
+      const all = readSheets()
+      const next = all.filter((s) => s.id !== id)
+      if (next.length !== all.length) writeSheets(next)
     },
 
     subscribe(handler) {

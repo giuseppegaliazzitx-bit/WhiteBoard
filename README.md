@@ -90,7 +90,7 @@ Leaving both values blank is a supported configuration, not a broken one: the
 board runs on `localStorage` and never loads the Supabase library at all.
 
 If you already applied an older `schema.sql`, run it again — it is safe. Newer
-builds also need the `people` and `canvas_objects` tables.
+builds also need the `people`, `canvas_objects` and `sheets` tables.
 
 ---
 

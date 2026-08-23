@@ -16,9 +16,11 @@ export function installShell() {
     <div id="filter-bar" hidden><div id="filter-chips"></div><button id="filter-clear"></button><span id="filter-count"></span></div>
     <button id="tab-board"></button>
     <button id="tab-pad"></button>
+    <button id="tab-sheets"></button>
     <div id="workspace">
       <main id="board"></main>
       <div id="pad" hidden></div>
+      <div id="sheets" hidden></div>
     </div>
     <div id="detail-root"></div>
     <div id="modal-root"></div>

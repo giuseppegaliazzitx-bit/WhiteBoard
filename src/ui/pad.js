@@ -14,6 +14,10 @@ import {
   CANVAS_LIMITS,
 } from '../canvas-model.js'
 import { screenToWorld, zoomAt, panBy } from '../camera.js'
+import { fillLinked } from '../linkify.js'
+
+const STICKY_MIN = 80
+const IMAGE_MIN = 64
 
 const TOOLS = [
   { id: 'select', label: 'Select', icon: 'pointer' },
@@ -113,6 +117,7 @@ export function createPadView(root, handlers) {
       if (spaceHeld || state.tool === 'draw') return
       if (state.tool !== 'select' && state.tool !== 'sticky' && state.tool !== 'text') return
       if (isEditing(e.target)) return
+      if (e.target.closest?.('.pad-resize, a')) return
       e.stopPropagation()
       e.preventDefault()
       select(obj.id)
@@ -128,21 +133,61 @@ export function createPadView(root, handlers) {
     })
   }
 
+  function resizeHandle(obj, { keepRatio = false } = {}) {
+    return h('div', {
+      class: 'pad-resize',
+      title: 'Resize',
+      'aria-label': 'Resize',
+      onpointerdown: (e) => {
+        if (e.button !== 0) return
+        e.stopPropagation()
+        e.preventDefault()
+        select(obj.id)
+        const pt = worldPoint(e)
+        gesture = {
+          type: 'resize',
+          id: obj.id,
+          startW: obj.w,
+          startH: obj.h,
+          originX: pt.x,
+          originY: pt.y,
+          keepRatio,
+          ratio: obj.h ? obj.w / obj.h : 1,
+          pointerId: e.pointerId,
+        }
+        viewport.setPointerCapture(e.pointerId)
+      },
+    })
+  }
+
   function renderSticky(obj) {
+    const view = h('div', { class: 'pad-sticky__view' })
+    fillLinked(view, obj.data.text)
+    view.style.fontSize = `${obj.data.fontSize}px`
+
     const area = h('textarea', {
       class: 'pad-sticky__text',
-      value: obj.data.text,
       spellcheck: 'false',
       maxlength: String(CANVAS_LIMITS.text),
       'aria-label': 'Sticky note',
       onpointerdown: (e) => e.stopPropagation(),
+      onfocus: () => node.classList.add('is-editing'),
       onblur: (e) => {
+        node.classList.remove('is-editing')
         const text = e.target.value
+        fillLinked(view, text)
         if (text !== obj.data.text) handlers.onPatch(obj.id, { data: { ...obj.data, text } })
       },
     })
     area.value = obj.data.text
     area.style.fontSize = `${obj.data.fontSize}px`
+
+    view.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('a')) return
+      e.stopPropagation()
+      node.classList.add('is-editing')
+      area.focus()
+    })
 
     const node = h(
       'div',
@@ -158,20 +203,46 @@ export function createPadView(root, handlers) {
           'background-color': obj.data.color,
         },
       },
+      view,
       area,
+      resizeHandle(obj),
     )
     if (obj.id === state.selectedId) node.classList.add('is-selected')
+    if (!obj.data.text) node.classList.add('is-editing')
     bindMoveHandle(node, obj)
     return node
   }
 
   function renderText(obj) {
-    const node = h('div', {
-      class: 'pad-text',
-      dataset: { id: obj.id },
+    const view = h('div', { class: 'pad-text__view' })
+    fillLinked(view, obj.data.text)
+
+    const editor = h('div', {
+      class: 'pad-text__edit',
       contenteditable: 'true',
       spellcheck: 'false',
       'aria-label': 'Text',
+    })
+    editor.textContent = obj.data.text
+    editor.addEventListener('pointerdown', (e) => e.stopPropagation())
+    editor.addEventListener('focus', () => node.classList.add('is-editing'))
+    editor.addEventListener('blur', () => {
+      node.classList.remove('is-editing')
+      const text = editor.textContent || ''
+      fillLinked(view, text)
+      if (text !== obj.data.text) handlers.onPatch(obj.id, { data: { ...obj.data, text } })
+    })
+
+    view.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('a')) return
+      e.stopPropagation()
+      node.classList.add('is-editing')
+      editor.focus()
+    })
+
+    const node = h('div', {
+      class: 'pad-text',
+      dataset: { id: obj.id },
       style: {
         left: `${obj.x}px`,
         top: `${obj.y}px`,
@@ -180,14 +251,9 @@ export function createPadView(root, handlers) {
         color: obj.data.color,
         'font-size': `${obj.data.fontSize}px`,
       },
-    })
-    node.textContent = obj.data.text
+    }, view, editor)
     if (obj.id === state.selectedId) node.classList.add('is-selected')
-    node.addEventListener('pointerdown', (e) => e.stopPropagation())
-    node.addEventListener('blur', () => {
-      const text = node.textContent || ''
-      if (text !== obj.data.text) handlers.onPatch(obj.id, { data: { ...obj.data, text } })
-    })
+    if (!obj.data.text) node.classList.add('is-editing')
     bindMoveHandle(node, obj)
     return node
   }
@@ -211,6 +277,7 @@ export function createPadView(root, handlers) {
       },
     }, img)
     if (obj.id === state.selectedId) node.classList.add('is-selected')
+    node.appendChild(resizeHandle(obj, { keepRatio: true }))
     bindMoveHandle(node, obj)
     return node
   }
@@ -485,6 +552,23 @@ export function createPadView(root, handlers) {
       }
       gesture.lastX = pt.x - gesture.dx
       gesture.lastY = pt.y - gesture.dy
+      return
+    }
+    if (gesture.type === 'resize') {
+      const pt = worldPoint(e)
+      let w = Math.max(STICKY_MIN, gesture.startW + (pt.x - gesture.originX))
+      let h = Math.max(STICKY_MIN, gesture.startH + (pt.y - gesture.originY))
+      if (gesture.keepRatio && gesture.ratio) {
+        w = Math.max(IMAGE_MIN, gesture.startW + (pt.x - gesture.originX))
+        h = Math.max(IMAGE_MIN, w / gesture.ratio)
+      }
+      const node = world.querySelector(`[data-id="${CSS.escape(gesture.id)}"]`)
+      if (node) {
+        node.style.width = `${w}px`
+        node.style.height = `${h}px`
+      }
+      gesture.lastW = w
+      gesture.lastH = h
     }
   }
 
@@ -505,6 +589,13 @@ export function createPadView(root, handlers) {
       const dy = done.lastY - obj.y
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
       await handlers.onPatch(done.id, { x: done.lastX, y: done.lastY })
+      return
+    }
+    if (done.type === 'resize' && typeof done.lastW === 'number') {
+      const obj = findObj(done.id)
+      if (!obj) return
+      if (Math.abs(done.lastW - obj.w) < 0.5 && Math.abs(done.lastH - obj.h) < 0.5) return
+      await handlers.onPatch(done.id, { w: done.lastW, h: done.lastH })
     }
   }
 
@@ -657,7 +748,8 @@ export function createPadView(root, handlers) {
       if (!last) return
       select(last.id)
       const node = world.querySelector(`[data-id="${CSS.escape(last.id)}"]`)
-      const field = node?.querySelector?.('textarea') || (node?.isContentEditable ? node : null)
+      node?.classList.add('is-editing')
+      const field = node?.querySelector?.('textarea, [contenteditable]')
       field?.focus()
     },
     destroy() {

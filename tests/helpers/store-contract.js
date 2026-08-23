@@ -244,6 +244,34 @@ export function runStoreContract(name, makeStore) {
       })
     })
 
+    describe('sheets', () => {
+      it('starts empty', async () => {
+        expect(await store.listSheets()).toEqual([])
+      })
+
+      it('round-trips a titled page', async () => {
+        const sheet = await store.createSheet({ title: 'Standup notes', body: 'Ship it', position: 1000 })
+        expect(sheet.title).toBe('Standup notes')
+        expect(sheet.body).toBe('Ship it')
+        const listed = await store.listSheets()
+        expect(listed).toHaveLength(1)
+        expect(listed[0].id).toBe(sheet.id)
+      })
+
+      it('updates title and body', async () => {
+        const sheet = await store.createSheet({ title: 'A', body: '' })
+        const next = await store.updateSheet(sheet.id, { title: 'B', body: 'hello' })
+        expect(next.title).toBe('B')
+        expect(next.body).toBe('hello')
+      })
+
+      it('removes a sheet', async () => {
+        const sheet = await store.createSheet({ title: 'A' })
+        await store.removeSheet(sheet.id)
+        expect(await store.listSheets()).toEqual([])
+      })
+    })
+
     describe('onStatus', () => {
       it('reports the current status immediately and hands back an unsubscribe', () => {
         // At least one: the current state is replayed on subscribe, and an
