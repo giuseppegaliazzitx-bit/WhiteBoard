@@ -42,7 +42,9 @@ import {
 import { config } from './config.js'
 import { createUndoStack } from './undo.js'
 
-const VIEWS = ['board', 'pad', 'sheets']
+const VIEWS = ['board', 'whiteboard', 'notepad']
+const VIEW_EL = { board: 'board', whiteboard: 'pad', notepad: 'sheets' }
+const VIEW_ALIAS = { pad: 'whiteboard', sheets: 'notepad' }
 
 const SEED = [
   { title: 'Invoices export drops the last row', status: 'problem', tag: 'billing', assignees: ['Sam Rivera'] },
@@ -355,7 +357,7 @@ async function createSheet(patch = {}, { record = true } = {}) {
     }
     return created
   } catch (err) {
-    errorToast(err, 'Could not create the sheet.')
+    errorToast(err, 'Could not create the notepad.')
   }
 }
 
@@ -376,7 +378,7 @@ async function patchSheet(id, patch, { record = true } = {}) {
   } catch (err) {
     sheets = sheets.map((s) => (s.id === id ? before : s))
     sheetsView.render(sortByPosition(sheets), { selectId: id })
-    errorToast(err, 'Could not save the sheet.')
+    errorToast(err, 'Could not save the notepad.')
   }
 }
 
@@ -385,10 +387,10 @@ async function deleteSheet(id, { record = true, confirm = true } = {}) {
   if (!removed) return
   if (confirm) {
     const ok = await confirmDialog({
-      title: 'Delete this sheet?',
+      title: 'Delete this notepad?',
       body: removed.title.trim()
         ? `"${removed.title.trim()}" will be removed.`
-        : 'This untitled sheet will be removed.',
+        : 'This untitled notepad will be removed.',
       confirmLabel: 'Delete',
       danger: true,
     })
@@ -402,7 +404,7 @@ async function deleteSheet(id, { record = true, confirm = true } = {}) {
   } catch (err) {
     sheets = before
     sheetsView.render(sortByPosition(sheets), { selectId: id })
-    errorToast(err, 'Could not delete the sheet.')
+    errorToast(err, 'Could not delete the notepad.')
     return
   }
   if (record) {
@@ -411,11 +413,11 @@ async function deleteSheet(id, { record = true, confirm = true } = {}) {
 }
 
 function setView(name) {
-  const next = VIEWS.includes(name) ? name : 'board'
+  const next = VIEWS.includes(name) ? name : VIEW_ALIAS[name] || 'board'
   currentView = next
   document.body.dataset.view = currentView
   for (const viewName of VIEWS) {
-    const el = document.getElementById(viewName)
+    const el = document.getElementById(VIEW_EL[viewName])
     if (el) el.hidden = viewName !== currentView
     document.getElementById(`tab-${viewName}`)?.setAttribute('aria-selected', String(currentView === viewName))
   }
@@ -424,6 +426,7 @@ function setView(name) {
   } catch {
     /* ignore: some embedded previews block history */
   }
+  if (next === 'notepad' && store && !sheets.length) createSheet({ record: false })
 }
 
 // ------------------------------------------------------------------ chrome
@@ -675,8 +678,8 @@ identity.onChange((name) => {
 })
 
 document.getElementById('tab-board')?.addEventListener('click', () => setView('board'))
-document.getElementById('tab-pad')?.addEventListener('click', () => setView('pad'))
-document.getElementById('tab-sheets')?.addEventListener('click', () => setView('sheets'))
+document.getElementById('tab-whiteboard')?.addEventListener('click', () => setView('whiteboard'))
+document.getElementById('tab-notepad')?.addEventListener('click', () => setView('notepad'))
 window.addEventListener('hashchange', () => {
   setView(location.hash.replace('#', ''))
 })
@@ -715,8 +718,8 @@ document.addEventListener('keydown', (e) => {
 
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
     e.preventDefault()
-    if (currentView === 'pad') padUndo.undo()
-    else if (currentView === 'sheets') sheetsUndo.undo()
+    if (currentView === 'whiteboard') padUndo.undo()
+    else if (currentView === 'notepad') sheetsUndo.undo()
     return
   }
 

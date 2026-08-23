@@ -284,16 +284,16 @@ input[type="search"]::-webkit-search-cancel-button { display: none; }
   position: relative;
 }
 
-body[data-view="pad"] .topbar__search,
-body[data-view="pad"] #btn-new,
-body[data-view="pad"] #people,
-body[data-view="pad"] .progress,
-body[data-view="pad"] #filter-bar,
-body[data-view="sheets"] .topbar__search,
-body[data-view="sheets"] #btn-new,
-body[data-view="sheets"] #people,
-body[data-view="sheets"] .progress,
-body[data-view="sheets"] #filter-bar { display: none; }
+body[data-view="whiteboard"] .topbar__search,
+body[data-view="whiteboard"] #btn-new,
+body[data-view="whiteboard"] #people,
+body[data-view="whiteboard"] .progress,
+body[data-view="whiteboard"] #filter-bar,
+body[data-view="notepad"] .topbar__search,
+body[data-view="notepad"] #btn-new,
+body[data-view="notepad"] #people,
+body[data-view="notepad"] .progress,
+body[data-view="notepad"] #filter-bar { display: none; }
 
 /* ---------------------------------------------------------------------------
    Board and columns
@@ -309,8 +309,8 @@ body[data-view="sheets"] #filter-bar { display: none; }
 }
 .board:focus { outline: none; }
 .board[hidden],
-body[data-view="pad"] .board,
-body[data-view="sheets"] .board { display: none !important; }
+body[data-view="whiteboard"] .board,
+body[data-view="notepad"] .board { display: none !important; }
 
 .column {
   display: flex; flex-direction: column;
@@ -660,7 +660,19 @@ kbd {
 }
 .pad[hidden] { display: none !important; }
 body[data-view="board"] .pad,
-body[data-view="sheets"] .pad { display: none !important; }
+body[data-view="notepad"] .pad { display: none !important; }
+
+.pad.is-locked .pad-tool,
+.pad.is-locked .pad-swatch,
+.pad.is-locked .pad-size {
+  pointer-events: none;
+  opacity: .4;
+}
+.pad-lock[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
 
 .pad__toolbar {
   flex: none;
@@ -837,7 +849,7 @@ body[data-view="sheets"] .pad { display: none !important; }
 }
 .sheets[hidden],
 body[data-view="board"] .sheets,
-body[data-view="pad"] .sheets { display: none !important; }
+body[data-view="whiteboard"] .sheets { display: none !important; }
 
 .sheets__bar {
   flex: none;

@@ -14,13 +14,13 @@ export function createSheetsView(root, handlers) {
   let saveTimer = null
   let pending = {}
 
-  const tabs = h('div', { class: 'sheets__tabs', role: 'tablist', 'aria-label': 'Sheets' })
+  const tabs = h('div', { class: 'sheets__tabs', role: 'tablist', 'aria-label': 'Notepads' })
   const title = h('input', {
     class: 'sheets__title',
     type: 'text',
-    placeholder: 'Name this sheet',
+    placeholder: 'Name this notepad',
     maxlength: String(SHEET_LIMITS.title),
-    'aria-label': 'Sheet title',
+    'aria-label': 'Notepad title',
     oninput: (e) => queue({ title: e.target.value }),
     onblur: flush,
   })
@@ -29,7 +29,7 @@ export function createSheetsView(root, handlers) {
     placeholder: 'Start writing…',
     spellcheck: 'true',
     maxlength: String(SHEET_LIMITS.body),
-    'aria-label': 'Sheet body',
+    'aria-label': 'Notepad',
     oninput: (e) => {
       queue({ body: e.target.value })
       paintLinks(e.target.value)
@@ -42,8 +42,8 @@ export function createSheetsView(root, handlers) {
     {
       class: 'icon-btn icon-btn--danger sheets__del',
       type: 'button',
-      'aria-label': 'Delete this sheet',
-      title: 'Delete this sheet',
+      'aria-label': 'Delete this notepad',
+      title: 'Delete this notepad',
       onclick: () => currentId && handlers.onRemove(currentId),
     },
     icon('trash'),
@@ -57,8 +57,8 @@ export function createSheetsView(root, handlers) {
       {
         class: 'sheets__add',
         type: 'button',
-        'aria-label': 'New sheet',
-        title: 'New sheet',
+        'aria-label': 'New notepad',
+        title: 'New notepad',
         onclick: () => handlers.onCreate(),
       },
       icon('plus'),
@@ -74,16 +74,20 @@ export function createSheetsView(root, handlers) {
     links,
     body,
   )
+  paper.addEventListener('pointerdown', (e) => {
+    if (e.target === title || e.target.closest('a')) return
+    if (e.target !== body) body.focus()
+  })
 
   const empty = h(
     'div',
     { class: 'sheets__empty' },
-    h('p', { text: 'No sheets yet.' }),
+    h('p', { text: 'No notepads yet.' }),
     h(
       'button',
       { class: 'btn btn--primary', type: 'button', onclick: () => handlers.onCreate() },
       icon('plus'),
-      h('span', { text: 'New sheet' }),
+      h('span', { text: 'New notepad' }),
     ),
   )
 

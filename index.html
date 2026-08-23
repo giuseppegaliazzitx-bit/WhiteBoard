@@ -16,8 +16,8 @@
       <h1 class="topbar__title">Board</h1>
       <div class="view-tabs" role="tablist" aria-label="View">
         <button id="tab-board" class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="board">Board</button>
-        <button id="tab-pad" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="pad">Pad</button>
-        <button id="tab-sheets" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="sheets">Sheets</button>
+        <button id="tab-whiteboard" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="pad">Whiteboard</button>
+        <button id="tab-notepad" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="sheets">Notepad</button>
       </div>
       <p class="progress" id="progress" aria-live="polite">&nbsp;</p>
     </div>
@@ -67,6 +67,7 @@
   <div id="workspace" class="workspace">
     <main id="board" class="board" tabindex="-1"></main>
     <div id="pad" class="pad" hidden></div>
+    <div id="sheets" class="sheets" hidden></div>
   </div>
 
   <div id="detail-root"></div>

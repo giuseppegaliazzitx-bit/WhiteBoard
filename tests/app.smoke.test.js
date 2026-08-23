@@ -82,18 +82,18 @@ describe('boot', () => {
     }, { label: 'Sam to appear in the people strip' })
   })
 
-  it('switches to the pad without losing the board', () => {
-    click(document.getElementById('tab-pad'))
-    expect(document.body.dataset.view).toBe('pad')
+  it('switches to the whiteboard without losing the board', () => {
+    click(document.getElementById('tab-whiteboard'))
+    expect(document.body.dataset.view).toBe('whiteboard')
     expect(document.getElementById('pad').hidden).toBe(false)
     click(document.getElementById('tab-board'))
     expect(document.body.dataset.view).toBe('board')
     expect(cardsIn('problem').length).toBeGreaterThan(0)
   })
 
-  it('opens the sheets tab', () => {
-    click(document.getElementById('tab-sheets'))
-    expect(document.body.dataset.view).toBe('sheets')
+  it('opens the notepad tab', () => {
+    click(document.getElementById('tab-notepad'))
+    expect(document.body.dataset.view).toBe('notepad')
     expect(document.getElementById('sheets').hidden).toBe(false)
     click(document.getElementById('tab-board'))
     expect(document.body.dataset.view).toBe('board')

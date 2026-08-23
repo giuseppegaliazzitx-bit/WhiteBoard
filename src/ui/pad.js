@@ -36,6 +36,9 @@ export function createPadView(root, handlers) {
     camera: { x: 64, y: 64, zoom: 1 },
     selectedId: null,
     objects: [],
+    lockPinned: false,
+    editing: false,
+    locked: false,
   }
 
   let spaceHeld = false
@@ -47,6 +50,7 @@ export function createPadView(root, handlers) {
   let swatches
   let fileInput
   let hint
+  let lockBtn
 
   function currentColors() {
     return state.tool === 'sticky' ? STICKY_COLORS : INK_COLORS
@@ -78,7 +82,18 @@ export function createPadView(root, handlers) {
   }
 
   function isEditing(target) {
-    return target && (target.tagName === 'TEXTAREA' || target.isContentEditable)
+    return Boolean(target && (target.tagName === 'TEXTAREA' || target.isContentEditable || target.closest?.('textarea')))
+  }
+
+  function applyLock() {
+    state.locked = state.lockPinned || state.editing
+    root.classList.toggle('is-locked', state.locked)
+    if (lockBtn) {
+      lockBtn.setAttribute('aria-pressed', String(state.locked))
+      const label = state.locked ? 'Unlock tools' : 'Lock tools while typing'
+      lockBtn.setAttribute('aria-label', label)
+      lockBtn.title = label
+    }
   }
 
   // ---------------------------------------------------------------- objects
@@ -101,7 +116,7 @@ export function createPadView(root, handlers) {
       return
     }
     hint.hidden = false
-    hint.textContent = 'Scroll to zoom · drag empty space to pan'
+    hint.textContent = 'Scroll to zoom · drag empty space to pan · lock tools while typing'
   }
 
   function renderObject(obj) {
@@ -192,9 +207,15 @@ export function createPadView(root, handlers) {
       maxlength: String(CANVAS_LIMITS.text),
       'aria-label': 'Sticky note',
       onpointerdown: (e) => e.stopPropagation(),
-      onfocus: () => node.classList.add('is-editing'),
+      onfocus: () => {
+        node.classList.add('is-editing')
+        state.editing = true
+        applyLock()
+      },
       onblur: (e) => {
         node.classList.remove('is-editing')
+        state.editing = false
+        applyLock()
         const text = e.target.value
         if (text !== obj.data.text) handlers.onPatch(obj.id, { data: { ...obj.data, text } })
       },
@@ -221,6 +242,10 @@ export function createPadView(root, handlers) {
       resizeHandle(obj),
     )
     if (obj.id === state.selectedId) node.classList.add('is-selected')
+    node.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.pad-move, .pad-resize')) return
+      area.focus()
+    })
     return node
   }
 
@@ -236,9 +261,15 @@ export function createPadView(root, handlers) {
     })
     editor.textContent = obj.data.text
     editor.addEventListener('pointerdown', (e) => e.stopPropagation())
-    editor.addEventListener('focus', () => node.classList.add('is-editing'))
+    editor.addEventListener('focus', () => {
+      node.classList.add('is-editing')
+      state.editing = true
+      applyLock()
+    })
     editor.addEventListener('blur', () => {
       node.classList.remove('is-editing')
+      state.editing = false
+      applyLock()
       const text = editor.textContent || ''
       fillLinked(view, text)
       if (text !== obj.data.text) handlers.onPatch(obj.id, { data: { ...obj.data, text } })
@@ -355,6 +386,7 @@ export function createPadView(root, handlers) {
   // ---------------------------------------------------------------- tools
 
   function setTool(tool) {
+    if (state.locked) return
     state.tool = tool
     root.dataset.tool = tool
     for (const btn of root.querySelectorAll('.pad-tool')) {
@@ -496,7 +528,8 @@ export function createPadView(root, handlers) {
   // ---------------------------------------------------------------- pointer
 
   function isOff() {
-    return root.hidden || document.body.dataset.view === 'board' || document.body.dataset.view === 'sheets'
+    const view = document.body.dataset.view
+    return root.hidden || view === 'board' || view === 'notepad'
   }
 
   function onPointerDown(e) {
@@ -511,6 +544,14 @@ export function createPadView(root, handlers) {
     if (e.button !== 0) return
 
     const pt = worldPoint(e)
+
+    if (state.locked) {
+      e.preventDefault()
+      gesture = { type: 'pan', x: e.clientX, y: e.clientY, pointerId: e.pointerId }
+      viewport.setPointerCapture(e.pointerId)
+      viewport.classList.add('is-panning')
+      return
+    }
 
     if (state.tool === 'draw') {
       e.preventDefault()
@@ -649,12 +690,14 @@ export function createPadView(root, handlers) {
     }
     if (e.key === 'Escape') {
       select(null)
-      setTool('select')
+      if (!state.locked) setTool('select')
+      return
     }
-    if (e.key === 'v' && !isEditing(e.target)) setTool('select')
-    if (e.key === 's' && !isEditing(e.target)) setTool('sticky')
-    if (e.key === 't' && !isEditing(e.target)) setTool('text')
-    if (e.key === 'd' && !isEditing(e.target)) setTool('draw')
+    if (state.locked || isEditing(e.target)) return
+    if (e.key === 'v') setTool('select')
+    if (e.key === 's') setTool('sticky')
+    if (e.key === 't') setTool('text')
+    if (e.key === 'd') setTool('draw')
   }
 
   function onKeyUp(e) {
@@ -731,6 +774,21 @@ export function createPadView(root, handlers) {
     h('span', { class: 'pad-sep' }),
     sizeInput,
     h('span', { class: 'pad-sep' }),
+    (lockBtn = h(
+      'button',
+      {
+        class: 'icon-btn pad-lock',
+        type: 'button',
+        'aria-pressed': 'false',
+        'aria-label': 'Lock tools while typing',
+        title: 'Lock tools while typing',
+        onclick: () => {
+          state.lockPinned = !state.lockPinned
+          applyLock()
+        },
+      },
+      icon('lock'),
+    )),
     h(
       'button',
       {
@@ -757,6 +815,7 @@ export function createPadView(root, handlers) {
   root.append(toolbar, viewport, fileInput)
   paintSwatches()
   applyCamera()
+  applyLock()
 
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)

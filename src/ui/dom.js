@@ -84,6 +84,7 @@ const ICONS = {
   sticky:  'M5 3.5h7.5L16 7v9.5H5V3.5z M12.5 3.5V7H16',
   image:   'M3.5 5h13v10H3.5z M7 8.5a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z M3.5 13.5l3.4-3.2 2.4 2.3 2.2-2.1 4.5 3',
   move:    'M10 3v14M3 10h14M6.5 6.5 10 3l3.5 3.5M6.5 13.5 10 17l3.5-3.5',
+  lock:    'M6.5 9V7a3.5 3.5 0 0 1 7 0v2M5 9h10v8.5H5V9z',
 }
 
 /** Stroked line icon. `fill` variants pass { fill: true }. */
