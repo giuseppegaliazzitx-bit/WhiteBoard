@@ -273,6 +273,7 @@ const pad = mountView('pad', (el) =>
     onCreate: createPadObject,
     onPatch: patchPadObject,
     onRemove: removePadObject,
+    onRemoveMany: removePadObjects,
     onError: (err) => errorToast(err),
   }),
 )
@@ -329,6 +330,32 @@ async function removePadObject(id, { record = true } = {}) {
   }
   if (record && removed) {
     padUndo.push(() => createPadObject(removed, { record: false }))
+  }
+}
+
+async function removePadObjects(ids, { record = true } = {}) {
+  const unique = [...new Set(ids)].filter(Boolean)
+  if (!unique.length) return
+  if (unique.length === 1) {
+    await removePadObject(unique[0], { record })
+    return
+  }
+  const removed = unique.map((id) => padObjects.find((o) => o.id === id)).filter(Boolean)
+  const before = padObjects
+  padObjects = padObjects.filter((o) => !unique.includes(o.id))
+  pad.render(padObjects)
+  try {
+    for (const id of unique) await store.removeCanvasObject(id)
+  } catch (err) {
+    padObjects = before
+    pad.render(padObjects)
+    errorToast(err, 'Could not delete that.')
+    return
+  }
+  if (record && removed.length) {
+    padUndo.push(async () => {
+      for (const obj of removed) await createPadObject(obj, { record: false })
+    })
   }
 }
 

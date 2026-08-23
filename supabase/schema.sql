@@ -189,10 +189,11 @@ create table if not exists public.canvas_objects (
   updated_at timestamptz      not null default now()
 );
 
+alter table public.canvas_objects drop constraint if exists canvas_kind_check;
 do $$ begin
   alter table public.canvas_objects
     add constraint canvas_kind_check
-    check (kind in ('sticky', 'text', 'stroke', 'image'));
+    check (kind in ('sticky', 'text', 'stroke', 'image', 'arrow'));
 exception when duplicate_object then null; end $$;
 
 do $$ begin

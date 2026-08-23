@@ -1,8 +1,8 @@
 /**
- * Shared notepad: an infinite canvas of stickies, text, strokes and images.
+ * Shared whiteboard: stickies, pen, arrows, images.
  *
- * Wheel zooms toward the cursor. Drag empty space to pan. Space+drag also
- * pans, so you can move around without switching tools.
+ * Right-click picks a tool. Mouse-drag draws a selection rectangle.
+ * Wheel zooms; Space/middle-drag pans.
  */
 import { h, clear, icon } from './dom.js'
 import {
@@ -12,6 +12,7 @@ import {
   fontSize,
   nextZ,
   CANVAS_LIMITS,
+  objectsInRect,
 } from '../canvas-model.js'
 import { screenToWorld, zoomAt, panBy } from '../camera.js'
 import { fillLinked } from '../linkify.js'
@@ -20,12 +21,15 @@ const STICKY_MIN = 80
 const IMAGE_MIN = 64
 
 const TOOLS = [
-  { id: 'select', label: 'Select', icon: 'pointer' },
-  { id: 'sticky', label: 'Sticky', icon: 'sticky' },
-  { id: 'text',   label: 'Text',   icon: 'text' },
-  { id: 'draw',   label: 'Draw',   icon: 'pen' },
-  { id: 'image',  label: 'Image',  icon: 'image' },
+  { id: 'select', label: 'Mouse',  icon: 'pointer', key: 'U' },
+  { id: 'draw',   label: 'Pen',    icon: 'pen',     key: 'I' },
+  { id: 'sticky', label: 'Sticky', icon: 'sticky',  key: 'O' },
+  { id: 'arrow',  label: 'Arrow',  icon: 'arrow',   key: 'P' },
+  { id: 'delete', label: 'Delete', icon: 'trash',   key: 'Y' },
+  { id: 'image',  label: 'Image',  icon: 'image',   key: 'K' },
 ]
+
+const KEY_TOOLS = { u: 'select', i: 'draw', o: 'sticky', p: 'arrow', y: 'delete', k: 'image' }
 
 export function createPadView(root, handlers) {
   const state = {
@@ -34,7 +38,7 @@ export function createPadView(root, handlers) {
     inkColor: INK_COLORS[0],
     size: 3,
     camera: { x: 64, y: 64, zoom: 1 },
-    selectedId: null,
+    selectedIds: new Set(),
     objects: [],
     lockPinned: false,
     editing: false,
@@ -51,6 +55,8 @@ export function createPadView(root, handlers) {
   let fileInput
   let hint
   let lockBtn
+  let menu
+  let marquee
 
   function currentColors() {
     return state.tool === 'sticky' ? STICKY_COLORS : INK_COLORS
@@ -96,18 +102,28 @@ export function createPadView(root, handlers) {
     }
   }
 
-  // ---------------------------------------------------------------- objects
-
   function findObj(id) {
     return state.objects.find((o) => o.id === id) || null
   }
 
-  function select(id) {
-    state.selectedId = id
+  function paintSelection() {
     for (const node of world.querySelectorAll('[data-id]')) {
-      node.classList.toggle('is-selected', node.dataset.id === id)
+      node.classList.toggle('is-selected', state.selectedIds.has(node.dataset.id))
     }
     paintHint()
+  }
+
+  function selectIds(ids) {
+    state.selectedIds = new Set(ids.filter(Boolean))
+    paintSelection()
+  }
+
+  function select(id) {
+    selectIds(id ? [id] : [])
+  }
+
+  function selectedList() {
+    return [...state.selectedIds]
   }
 
   function paintHint() {
@@ -116,13 +132,30 @@ export function createPadView(root, handlers) {
       return
     }
     hint.hidden = false
-    hint.textContent = 'Scroll to zoom · drag empty space to pan · lock tools while typing'
+    hint.textContent = 'Right-click for tools · drag with Mouse to select · scroll to zoom'
+  }
+
+  function hideMenu() {
+    if (menu) menu.hidden = true
+  }
+
+  function showMenu(e) {
+    menu.hidden = false
+    const vr = root.getBoundingClientRect()
+    let x = e.clientX - vr.left
+    let y = e.clientY - vr.top
+    menu.style.left = `${x}px`
+    menu.style.top = `${y}px`
+    const box = menu.getBoundingClientRect()
+    if (box.right > vr.right) menu.style.left = `${Math.max(8, x - box.width)}px`
+    if (box.bottom > vr.bottom) menu.style.top = `${Math.max(8, y - box.height)}px`
   }
 
   function renderObject(obj) {
     if (obj.kind === 'sticky') return renderSticky(obj)
     if (obj.kind === 'text') return renderText(obj)
     if (obj.kind === 'image') return renderImage(obj)
+    if (obj.kind === 'arrow') return renderArrow(obj)
     return renderStroke(obj)
   }
 
@@ -132,16 +165,28 @@ export function createPadView(root, handlers) {
 
   function startMove(e, obj) {
     if (e.button !== 0) return
-    if (spaceHeld || state.tool === 'draw') return
+    if (spaceHeld || state.tool === 'draw' || state.tool === 'arrow') return
+    if (state.tool === 'delete') {
+      e.stopPropagation()
+      e.preventDefault()
+      removeIds([obj.id])
+      return
+    }
     e.stopPropagation()
     e.preventDefault()
-    select(obj.id)
+    const group = state.selectedIds.has(obj.id) && state.selectedIds.size > 1
+      ? selectedList()
+      : [obj.id]
+    selectIds(group)
     const start = worldPoint(e)
     gesture = {
       type: 'move',
-      id: obj.id,
-      dx: start.x - obj.x,
-      dy: start.y - obj.y,
+      origins: group.map((id) => {
+        const o = findObj(id)
+        return { id, x: o.x, y: o.y }
+      }),
+      startX: start.x,
+      startY: start.y,
       pointerId: e.pointerId,
     }
     viewport.setPointerCapture(e.pointerId)
@@ -241,8 +286,14 @@ export function createPadView(root, handlers) {
       area,
       resizeHandle(obj),
     )
-    if (obj.id === state.selectedId) node.classList.add('is-selected')
+    if (state.selectedIds.has(obj.id)) node.classList.add('is-selected')
     node.addEventListener('pointerdown', (e) => {
+      if (state.tool === 'delete') {
+        e.preventDefault()
+        e.stopPropagation()
+        removeIds([obj.id])
+        return
+      }
       if (e.target.closest('.pad-move, .pad-resize')) return
       area.focus()
     })
@@ -294,7 +345,7 @@ export function createPadView(root, handlers) {
         'font-size': `${obj.data.fontSize}px`,
       },
     }, view, editor)
-    if (obj.id === state.selectedId) node.classList.add('is-selected')
+    if (state.selectedIds.has(obj.id)) node.classList.add('is-selected')
     if (!obj.data.text) node.classList.add('is-editing')
     bindMoveHandle(node, obj)
     return node
@@ -318,7 +369,7 @@ export function createPadView(root, handlers) {
         'z-index': String(obj.z),
       },
     }, img)
-    if (obj.id === state.selectedId) node.classList.add('is-selected')
+    if (state.selectedIds.has(obj.id)) node.classList.add('is-selected')
     node.appendChild(resizeHandle(obj, { keepRatio: true }))
     bindMoveHandle(node, obj)
     return node
@@ -345,7 +396,33 @@ export function createPadView(root, handlers) {
     path.setAttribute('stroke-linecap', 'round')
     path.setAttribute('stroke-linejoin', 'round')
     svg.appendChild(path)
-    if (obj.id === state.selectedId) svg.classList.add('is-selected')
+    if (state.selectedIds.has(obj.id)) svg.classList.add('is-selected')
+    bindMoveHandle(svg, obj)
+    return svg
+  }
+
+  function renderArrow(obj) {
+    const { x1, y1, x2, y2, color, size } = obj.data
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('class', 'pad-arrow')
+    svg.dataset.id = obj.id
+    svg.style.left = `${obj.x}px`
+    svg.style.top = `${obj.y}px`
+    svg.style.width = `${Math.max(obj.w, 1)}px`
+    svg.style.height = `${Math.max(obj.h, 1)}px`
+    svg.style.zIndex = String(obj.z)
+    svg.setAttribute('viewBox', `0 0 ${Math.max(obj.w, 1)} ${Math.max(obj.h, 1)}`)
+    svg.setAttribute('overflow', 'visible')
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    line.setAttribute('d', arrowPath(x1, y1, x2, y2, size))
+    line.setAttribute('fill', 'none')
+    line.setAttribute('stroke', color)
+    line.setAttribute('stroke-width', String(size))
+    line.setAttribute('stroke-linecap', 'round')
+    line.setAttribute('stroke-linejoin', 'round')
+    svg.appendChild(line)
+    if (state.selectedIds.has(obj.id)) svg.classList.add('is-selected')
     bindMoveHandle(svg, obj)
     return svg
   }
@@ -383,17 +460,19 @@ export function createPadView(root, handlers) {
     }
   }
 
-  // ---------------------------------------------------------------- tools
-
-  function setTool(tool) {
-    if (state.locked) return
+  function setTool(tool, { force = false } = {}) {
+    if (state.locked && !force) return
+    if (tool === 'image') {
+      fileInput.click()
+      return
+    }
     state.tool = tool
     root.dataset.tool = tool
     for (const btn of root.querySelectorAll('.pad-tool')) {
       btn.setAttribute('aria-pressed', String(btn.dataset.tool === tool))
     }
     paintSwatches()
-    if (tool === 'image') fileInput.click()
+    hideMenu()
   }
 
   function paintSwatches() {
@@ -416,28 +495,24 @@ export function createPadView(root, handlers) {
     }
   }
 
+  function removeIds(ids) {
+    const list = ids.filter(Boolean)
+    if (!list.length) return
+    list.forEach((id) => state.selectedIds.delete(id))
+    paintSelection()
+    if (list.length === 1) handlers.onRemove(list[0])
+    else handlers.onRemoveMany?.(list)
+  }
+
   async function placeSticky(pt) {
-    const size = 200
     await handlers.onCreate({
       kind: 'sticky',
       x: pt.x - 16,
       y: pt.y - 16,
-      w: size,
-      h: size,
+      w: 200,
+      h: 200,
       z: nextZ(state.objects),
       data: { text: '', color: state.stickyColor, fontSize: fontSize(state.size) },
-    })
-  }
-
-  async function placeText(pt) {
-    await handlers.onCreate({
-      kind: 'text',
-      x: pt.x,
-      y: pt.y - 12,
-      w: 280,
-      h: 48,
-      z: nextZ(state.objects),
-      data: { text: '', color: state.inkColor, fontSize: fontSize(state.size) },
     })
   }
 
@@ -467,6 +542,29 @@ export function createPadView(root, handlers) {
     })
   }
 
+  async function commitArrow(x1, y1, x2, y2) {
+    if (Math.hypot(x2 - x1, y2 - y1) < 8) return
+    const pad = brushSize(state.size)
+    const x = Math.min(x1, x2) - pad
+    const y = Math.min(y1, y2) - pad
+    await handlers.onCreate({
+      kind: 'arrow',
+      x,
+      y,
+      w: Math.abs(x2 - x1) + pad * 2,
+      h: Math.abs(y2 - y1) + pad * 2,
+      z: nextZ(state.objects),
+      data: {
+        x1: x1 - x,
+        y1: y1 - y,
+        x2: x2 - x,
+        y2: y2 - y,
+        color: state.inkColor,
+        size: pad,
+      },
+    })
+  }
+
   function showLiveStroke(points) {
     if (liveStroke) liveStroke.remove()
     if (points.length < 1) return
@@ -488,9 +586,42 @@ export function createPadView(root, handlers) {
     liveStroke = svg
   }
 
+  function showLiveArrow(x1, y1, x2, y2) {
+    if (liveStroke) liveStroke.remove()
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    svg.setAttribute('class', 'pad-live')
+    svg.style.overflow = 'visible'
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    const size = brushSize(state.size)
+    path.setAttribute('d', arrowPath(x1, y1, x2, y2, size))
+    path.setAttribute('fill', 'none')
+    path.setAttribute('stroke', state.inkColor)
+    path.setAttribute('stroke-width', String(size))
+    path.setAttribute('stroke-linecap', 'round')
+    path.setAttribute('stroke-linejoin', 'round')
+    svg.appendChild(path)
+    world.appendChild(svg)
+    liveStroke = svg
+  }
+
   function clearLiveStroke() {
     liveStroke?.remove()
     liveStroke = null
+  }
+
+  function showMarquee(sx0, sy0, sx1, sy1) {
+    const r = rect()
+    const left = Math.min(sx0, sx1) - r.left
+    const top = Math.min(sy0, sy1) - r.top
+    marquee.hidden = false
+    marquee.style.left = `${left}px`
+    marquee.style.top = `${top}px`
+    marquee.style.width = `${Math.abs(sx1 - sx0)}px`
+    marquee.style.height = `${Math.abs(sy1 - sy0)}px`
+  }
+
+  function hideMarquee() {
+    marquee.hidden = true
   }
 
   async function loadImageFile(file) {
@@ -520,12 +651,10 @@ export function createPadView(root, handlers) {
     } catch (err) {
       handlers.onError?.(err)
     } finally {
-      setTool('select')
+      setTool('select', { force: true })
       fileInput.value = ''
     }
   }
-
-  // ---------------------------------------------------------------- pointer
 
   function isOff() {
     const view = document.body.dataset.view
@@ -534,6 +663,7 @@ export function createPadView(root, handlers) {
 
   function onPointerDown(e) {
     if (isOff()) return
+    hideMenu()
     if (e.button === 1 || spaceHeld) {
       e.preventDefault()
       gesture = { type: 'pan', x: e.clientX, y: e.clientY, pointerId: e.pointerId }
@@ -561,24 +691,38 @@ export function createPadView(root, handlers) {
       return
     }
 
+    if (state.tool === 'arrow') {
+      e.preventDefault()
+      gesture = { type: 'arrow', x1: pt.x, y1: pt.y, x2: pt.x, y2: pt.y, pointerId: e.pointerId }
+      viewport.setPointerCapture(e.pointerId)
+      showLiveArrow(pt.x, pt.y, pt.x, pt.y)
+      return
+    }
+
     if (state.tool === 'sticky') {
       e.preventDefault()
       placeSticky(pt)
       return
     }
 
-    if (state.tool === 'text') {
-      e.preventDefault()
-      placeText(pt)
-      setTool('select')
+    if (state.tool === 'delete') {
+      const hit = e.target.closest?.('[data-id]')
+      if (hit?.dataset.id) {
+        e.preventDefault()
+        removeIds([hit.dataset.id])
+      }
       return
     }
 
-    if (state.tool === 'select' && e.target === viewport) {
-      select(null)
-      gesture = { type: 'pan', x: e.clientX, y: e.clientY, pointerId: e.pointerId }
+    if (state.tool === 'select') {
+      e.preventDefault()
+      gesture = {
+        type: 'marquee',
+        sx: e.clientX,
+        sy: e.clientY,
+        pointerId: e.pointerId,
+      }
       viewport.setPointerCapture(e.pointerId)
-      viewport.classList.add('is-panning')
     }
   }
 
@@ -599,15 +743,30 @@ export function createPadView(root, handlers) {
       showLiveStroke(gesture.points)
       return
     }
+    if (gesture.type === 'arrow') {
+      const pt = worldPoint(e)
+      gesture.x2 = pt.x
+      gesture.y2 = pt.y
+      showLiveArrow(gesture.x1, gesture.y1, pt.x, pt.y)
+      return
+    }
+    if (gesture.type === 'marquee') {
+      showMarquee(gesture.sx, gesture.sy, e.clientX, e.clientY)
+      return
+    }
     if (gesture.type === 'move') {
       const pt = worldPoint(e)
-      const node = world.querySelector(`[data-id="${CSS.escape(gesture.id)}"]`)
-      if (node) {
-        node.style.left = `${pt.x - gesture.dx}px`
-        node.style.top = `${pt.y - gesture.dy}px`
+      const dx = pt.x - gesture.startX
+      const dy = pt.y - gesture.startY
+      for (const origin of gesture.origins) {
+        const node = world.querySelector(`[data-id="${CSS.escape(origin.id)}"]`)
+        if (node) {
+          node.style.left = `${origin.x + dx}px`
+          node.style.top = `${origin.y + dy}px`
+        }
       }
-      gesture.lastX = pt.x - gesture.dx
-      gesture.lastY = pt.y - gesture.dy
+      gesture.lastDx = dx
+      gesture.lastDy = dy
       return
     }
     if (gesture.type === 'resize') {
@@ -649,13 +808,34 @@ export function createPadView(root, handlers) {
       await commitStroke(done.points)
       return
     }
-    if (done.type === 'move' && typeof done.lastX === 'number') {
-      const obj = findObj(done.id)
-      if (!obj) return
-      const dx = done.lastX - obj.x
-      const dy = done.lastY - obj.y
-      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return
-      await handlers.onPatch(done.id, { x: done.lastX, y: done.lastY })
+    if (done.type === 'arrow') {
+      clearLiveStroke()
+      await commitArrow(done.x1, done.y1, done.x2, done.y2)
+      return
+    }
+    if (done.type === 'marquee') {
+      hideMarquee()
+      const a = screenToWorld(done.sx, done.sy, state.camera, rect())
+      const b = worldPoint(e)
+      const box = {
+        x: Math.min(a.x, b.x),
+        y: Math.min(a.y, b.y),
+        w: Math.abs(b.x - a.x),
+        h: Math.abs(b.y - a.y),
+      }
+      if (box.w < 4 && box.h < 4) {
+        const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('[data-id]')
+        select(hit?.dataset.id || null)
+        return
+      }
+      selectIds(objectsInRect(state.objects, box).map((o) => o.id))
+      return
+    }
+    if (done.type === 'move' && typeof done.lastDx === 'number') {
+      if (Math.abs(done.lastDx) < 0.5 && Math.abs(done.lastDy) < 0.5) return
+      for (const origin of done.origins) {
+        await handlers.onPatch(origin.id, { x: origin.x + done.lastDx, y: origin.y + done.lastDy })
+      }
       return
     }
     if (done.type === 'resize' && typeof done.lastW === 'number') {
@@ -674,6 +854,13 @@ export function createPadView(root, handlers) {
     applyCamera()
   }
 
+  function onContextMenu(e) {
+    if (isOff()) return
+    if (isEditing(e.target)) return
+    e.preventDefault()
+    showMenu(e)
+  }
+
   function onKeyDown(e) {
     if (isOff()) return
     if (e.code === 'Space' && !isEditing(e.target)) {
@@ -682,22 +869,31 @@ export function createPadView(root, handlers) {
       e.preventDefault()
       return
     }
-    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedId && !isEditing(e.target)) {
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedIds.size && !isEditing(e.target)) {
       e.preventDefault()
-      const id = state.selectedId
-      select(null)
-      handlers.onRemove(id)
-    }
-    if (e.key === 'Escape') {
-      select(null)
-      if (!state.locked) setTool('select')
+      removeIds(selectedList())
       return
     }
-    if (state.locked || isEditing(e.target)) return
-    if (e.key === 'v') setTool('select')
-    if (e.key === 's') setTool('sticky')
-    if (e.key === 't') setTool('text')
-    if (e.key === 'd') setTool('draw')
+    if (e.key === 'Escape') {
+      hideMenu()
+      select(null)
+      if (!state.locked) setTool('select', { force: true })
+      return
+    }
+    if ((e.ctrlKey || e.metaKey) && !isEditing(e.target)) {
+      const letter = e.key.toLowerCase()
+      if (letter === 'l') {
+        e.preventDefault()
+        state.lockPinned = !state.lockPinned
+        applyLock()
+        return
+      }
+      const tool = KEY_TOOLS[letter]
+      if (tool) {
+        e.preventDefault()
+        setTool(tool, { force: true })
+      }
+    }
   }
 
   function onKeyUp(e) {
@@ -707,12 +903,52 @@ export function createPadView(root, handlers) {
     }
   }
 
-  // ---------------------------------------------------------------- build
-
   zoomLabel = h('span', { class: 'pad-zoom', text: '100%' })
   swatches = h('div', { class: 'pad-swatches' })
   hint = h('p', { class: 'pad-hint' })
+  marquee = h('div', { class: 'pad-marquee', hidden: true })
   world = h('div', { class: 'pad__world' })
+
+  menu = h(
+    'div',
+    { class: 'pad-menu', hidden: true, role: 'menu' },
+    ...TOOLS.filter((t) => t.id !== 'image').map((tool) =>
+      h(
+        'button',
+        {
+          class: 'pad-menu__item',
+          type: 'button',
+          role: 'menuitem',
+          onclick: () => {
+            if (tool.id === 'delete' && state.selectedIds.size) {
+              hideMenu()
+              removeIds(selectedList())
+              return
+            }
+            setTool(tool.id, { force: true })
+          },
+        },
+        icon(tool.icon),
+        h('span', { text: tool.label }),
+        h('kbd', { text: `Ctrl+${tool.key}` }),
+      ),
+    ),
+  )
+
+  const keys = h(
+    'div',
+    { class: 'pad-keys', 'aria-hidden': 'true' },
+    ...[...TOOLS, { id: 'lock', label: 'Lock', icon: 'lock', key: 'L' }].map((tool) =>
+      h(
+        'div',
+        { class: 'pad-keys__row' },
+        icon(tool.icon),
+        h('span', { text: tool.label }),
+        h('kbd', { text: `Ctrl+${tool.key}` }),
+      ),
+    ),
+  )
+
   viewport = h(
     'div',
     {
@@ -725,15 +961,18 @@ export function createPadView(root, handlers) {
     },
     world,
     hint,
+    marquee,
+    keys,
   )
   viewport.addEventListener('wheel', onWheel, { passive: false })
+  viewport.addEventListener('contextmenu', onContextMenu)
 
   fileInput = h('input', {
     type: 'file',
     accept: 'image/*',
     class: 'visually-hidden',
     onchange: (e) => loadImageFile(e.target.files?.[0]),
-    oncancel: () => setTool('select'),
+    oncancel: () => setTool('select', { force: true }),
   })
 
   const sizeInput = h('input', {
@@ -756,10 +995,10 @@ export function createPadView(root, handlers) {
         class: 'pad-tool icon-btn',
         type: 'button',
         dataset: { tool: tool.id },
-        'aria-label': tool.label,
-        title: tool.label,
+        'aria-label': `${tool.label} (Ctrl+${tool.key})`,
+        title: `${tool.label}  Ctrl+${tool.key}`,
         'aria-pressed': String(tool.id === state.tool),
-        onclick: () => setTool(tool.id),
+        onclick: () => setTool(tool.id, { force: true }),
       },
       icon(tool.icon),
     ),
@@ -781,7 +1020,7 @@ export function createPadView(root, handlers) {
         type: 'button',
         'aria-pressed': 'false',
         'aria-label': 'Lock tools while typing',
-        title: 'Lock tools while typing',
+        title: 'Lock tools while typing  Ctrl+L',
         onclick: () => {
           state.lockPinned = !state.lockPinned
           applyLock()
@@ -796,12 +1035,7 @@ export function createPadView(root, handlers) {
         type: 'button',
         'aria-label': 'Delete selected',
         title: 'Delete selected',
-        onclick: () => {
-          if (!state.selectedId) return
-          const id = state.selectedId
-          select(null)
-          handlers.onRemove(id)
-        },
+        onclick: () => removeIds(selectedList()),
       },
       icon('trash'),
     ),
@@ -812,19 +1046,22 @@ export function createPadView(root, handlers) {
   root.classList.add('pad')
   root.dataset.tool = state.tool
   clear(root)
-  root.append(toolbar, viewport, fileInput)
+  root.append(toolbar, viewport, menu, fileInput)
   paintSwatches()
   applyCamera()
   applyLock()
 
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)
+  document.addEventListener('pointerdown', (e) => {
+    if (!menu.contains(e.target)) hideMenu()
+  }, true)
 
   return {
     render(objects) {
       state.objects = objects
-      if (state.selectedId && !objects.some((o) => o.id === state.selectedId)) {
-        state.selectedId = null
+      for (const id of [...state.selectedIds]) {
+        if (!objects.some((o) => o.id === id)) state.selectedIds.delete(id)
       }
       paintWorld()
     },
@@ -842,6 +1079,18 @@ export function createPadView(root, handlers) {
       document.removeEventListener('keyup', onKeyUp)
     },
   }
+}
+
+function arrowPath(x1, y1, x2, y2, size) {
+  const angle = Math.atan2(y2 - y1, x2 - x1)
+  const len = Math.max(10, size * 2.2)
+  const a1 = angle - Math.PI / 7
+  const a2 = angle + Math.PI / 7
+  const hx1 = x2 - Math.cos(a1) * len
+  const hy1 = y2 - Math.sin(a1) * len
+  const hx2 = x2 - Math.cos(a2) * len
+  const hy2 = y2 - Math.sin(a2) * len
+  return `M ${x1} ${y1} L ${x2} ${y2} M ${hx1} ${hy1} L ${x2} ${y2} L ${hx2} ${hy2}`
 }
 
 function compressImage(file) {

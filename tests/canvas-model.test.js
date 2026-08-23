@@ -6,6 +6,7 @@ import {
   fontSize,
   STICKY_COLORS,
   CANVAS_LIMITS,
+  objectsInRect,
 } from '../src/canvas-model.js'
 
 describe('normalizeCanvasObject', () => {
@@ -58,6 +59,29 @@ describe('normalizeCanvasObject', () => {
     })
     expect(obj.data.points).toEqual([[0, 0], [10, 4]])
     expect(obj.data.size).toBe(6)
+  })
+
+  it('keeps an arrow', () => {
+    const obj = normalizeCanvasObject({
+      kind: 'arrow',
+      x: 0,
+      y: 0,
+      w: 40,
+      h: 10,
+      data: { x1: 0, y1: 5, x2: 40, y2: 5, color: '#2f6df6', size: 4 },
+    })
+    expect(obj.kind).toBe('arrow')
+    expect(obj.data.x2).toBe(40)
+    expect(obj.data.color).toBe('#2f6df6')
+  })
+})
+
+describe('objectsInRect', () => {
+  it('returns objects whose boxes overlap the marquee', () => {
+    const a = normalizeCanvasObject({ id: 'a', kind: 'sticky', x: 0, y: 0, w: 50, h: 50 })
+    const b = normalizeCanvasObject({ id: 'b', kind: 'sticky', x: 200, y: 200, w: 50, h: 50 })
+    expect(objectsInRect([a, b], { x: 10, y: 10, w: 20, h: 20 }).map((o) => o.id)).toEqual(['a'])
+    expect(objectsInRect([a, b], { x: 0, y: 0, w: 400, h: 400 })).toHaveLength(2)
   })
 })
 

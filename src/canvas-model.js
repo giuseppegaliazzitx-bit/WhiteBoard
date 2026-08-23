@@ -6,7 +6,7 @@
  */
 import { newId } from './model.js'
 
-export const CANVAS_KINDS = ['sticky', 'text', 'stroke', 'image']
+export const CANVAS_KINDS = ['sticky', 'text', 'stroke', 'image', 'arrow']
 
 export const STICKY_COLORS = ['#f5e6a3', '#f7c4d4', '#c5dff0', '#c8e6c9', '#ffffff']
 export const INK_COLORS = ['#14181f', '#d7263d', '#2f6df6', '#17936a', '#d68a12']
@@ -103,6 +103,16 @@ function normalizeData(kind, raw) {
       size: clampInt(src.size, 4, 1, 40),
     }
   }
+  if (kind === 'arrow') {
+    return {
+      x1: num(src.x1, 0),
+      y1: num(src.y1, 0),
+      x2: num(src.x2, 40),
+      y2: num(src.y2, 0),
+      color: INK_COLORS.includes(src.color) ? src.color : INK_DEFAULT,
+      size: clampInt(src.size, 4, 1, 40),
+    }
+  }
   // Images are data URLs only -- remote URLs would be an XSS hole on a
   // board anyone with the link can write to.
   const srcUrl = typeof src.src === 'string' && src.src.startsWith('data:image/')
@@ -114,8 +124,8 @@ function normalizeData(kind, raw) {
 export function normalizeCanvasObject(raw) {
   const src = raw && typeof raw === 'object' ? raw : {}
   const kind = isKind(src.kind) ? src.kind : 'sticky'
-  const w = num(src.w, kind === 'stroke' ? 0 : 220, 0, 8000)
-  const h = num(src.h, kind === 'stroke' ? 0 : 220, 0, 8000)
+  const w = num(src.w, kind === 'stroke' || kind === 'arrow' ? 0 : 220, 0, 8000)
+  const h = num(src.h, kind === 'stroke' || kind === 'arrow' ? 0 : 220, 0, 8000)
   return {
     id: str(src.id, 64) || newId(),
     kind,
@@ -145,4 +155,17 @@ export function brushSize(level) {
 
 export function fontSize(level) {
   return [14, 18, 24, 32, 40, 52][Math.min(5, Math.max(0, level - 1))]
+}
+
+/** Axis-aligned box of an object, for marquee hit tests. */
+export function objectBox(obj) {
+  return { x: obj.x, y: obj.y, w: Math.max(obj.w, 1), h: Math.max(obj.h, 1) }
+}
+
+export function boxesOverlap(a, b) {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+export function objectsInRect(objects, rect) {
+  return objects.filter((obj) => boxesOverlap(objectBox(obj), rect))
 }

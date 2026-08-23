@@ -721,9 +721,11 @@ body[data-view="notepad"] .pad { display: none !important; }
 .pad__viewport.is-panning,
 .pad__viewport.is-space { cursor: grab; }
 .pad__viewport.is-panning:active { cursor: grabbing; }
-.pad[data-tool="draw"] .pad__viewport { cursor: crosshair; }
+.pad[data-tool="draw"] .pad__viewport,
 .pad[data-tool="sticky"] .pad__viewport,
-.pad[data-tool="text"] .pad__viewport { cursor: crosshair; }
+.pad[data-tool="arrow"] .pad__viewport,
+.pad[data-tool="select"] .pad__viewport { cursor: crosshair; }
+.pad[data-tool="delete"] .pad__viewport { cursor: pointer; }
 
 .pad__world {
   position: absolute;
@@ -739,14 +741,15 @@ body[data-view="notepad"] .pad { display: none !important; }
   color: var(--text-3); font-size: 13px;
 }
 
-.pad-sticky, .pad-text, .pad-image, .pad-stroke {
+.pad-sticky, .pad-text, .pad-image, .pad-stroke, .pad-arrow {
   position: absolute;
   cursor: grab;
 }
 .pad-sticky.is-selected,
 .pad-text.is-selected,
 .pad-image.is-selected,
-.pad-stroke.is-selected {
+.pad-stroke.is-selected,
+.pad-arrow.is-selected {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -832,8 +835,74 @@ body[data-view="notepad"] .pad { display: none !important; }
 }
 .pad-image__img { display: block; width: 100%; height: 100%; object-fit: contain; pointer-events: none; user-select: none; }
 
-.pad-stroke { overflow: visible; }
+.pad-stroke, .pad-arrow { overflow: visible; }
 .pad-live { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; width: 1px; height: 1px; }
+
+.pad-marquee {
+  position: absolute;
+  border: 1.5px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  pointer-events: none;
+  z-index: 6;
+}
+.pad-marquee[hidden] { display: none !important; }
+
+.pad-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 168px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2);
+}
+.pad-menu[hidden] { display: none !important; }
+.pad-menu__item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  height: 30px; padding: 0 8px;
+  border: none; border-radius: var(--r-sm);
+  background: transparent; color: var(--text);
+  font-size: 12.5px; cursor: pointer; text-align: left;
+}
+.pad-menu__item:hover { background: var(--surface-2); }
+.pad-menu__item svg { width: 14px; height: 14px; color: var(--text-2); flex: none; }
+.pad-menu__item kbd {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-3);
+  border: none;
+  background: none;
+  padding: 0;
+}
+
+.pad-keys {
+  position: absolute;
+  top: 10px; right: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  pointer-events: none;
+  color: var(--text-3);
+  font-size: 11px;
+  opacity: .55;
+  user-select: none;
+}
+.pad-keys__row {
+  display: flex; align-items: center; gap: 6px;
+  justify-content: flex-end;
+}
+.pad-keys__row svg { width: 12px; height: 12px; flex: none; }
+.pad-keys__row span { min-width: 48px; text-align: right; }
+.pad-keys kbd {
+  font-size: 10px;
+  color: var(--text-3);
+  border-color: var(--border);
+  background: transparent;
+  padding: 0 4px;
+}
 
 /* ---------------------------------------------------------------------------
    Sheets
