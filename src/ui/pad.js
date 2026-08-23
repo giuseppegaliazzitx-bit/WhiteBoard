@@ -856,8 +856,9 @@ export function createPadView(root, handlers) {
 
   function onContextMenu(e) {
     if (isOff()) return
-    if (isEditing(e.target)) return
     e.preventDefault()
+    e.stopPropagation()
+    if (e.target.closest?.('.pad-menu')) return
     showMenu(e)
   }
 
@@ -965,7 +966,7 @@ export function createPadView(root, handlers) {
     keys,
   )
   viewport.addEventListener('wheel', onWheel, { passive: false })
-  viewport.addEventListener('contextmenu', onContextMenu)
+  root.addEventListener('contextmenu', onContextMenu, true)
 
   fileInput = h('input', {
     type: 'file',
@@ -1077,6 +1078,7 @@ export function createPadView(root, handlers) {
     destroy() {
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('keyup', onKeyUp)
+      root.removeEventListener('contextmenu', onContextMenu, true)
     },
   }
 }
