@@ -173,8 +173,14 @@ export function createSheetsView(root, handlers) {
             type: 'button',
             role: 'tab',
             'aria-selected': String(sheet.id === currentId),
-            title: label,
+            title: `${label} — middle-click to delete`,
             onclick: () => select(sheet.id),
+            onpointerdown: (e) => {
+              if (e.button !== 1) return
+              e.preventDefault()
+              e.stopPropagation()
+              handlers.onRemove(sheet.id)
+            },
           },
           h('span', { text: label }),
         ),

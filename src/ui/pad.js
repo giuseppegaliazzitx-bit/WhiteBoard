@@ -2,7 +2,7 @@
  * Shared whiteboard: stickies, pen, arrows, images.
  *
  * Right-click picks a tool. Mouse-drag draws a selection rectangle.
- * Wheel zooms; Space/middle-drag pans.
+ * Wheel zooms; Space/middle-drag pans. Middle-click an object to delete it.
  */
 import { h, clear, icon } from './dom.js'
 import {
@@ -16,6 +16,7 @@ import {
 } from '../canvas-model.js'
 import { screenToWorld, zoomAt, panBy } from '../camera.js'
 import { fillLinked } from '../linkify.js'
+import { confirmDialog } from './modal.js'
 
 const STICKY_MIN = 80
 const IMAGE_MIN = 64
@@ -504,6 +505,32 @@ export function createPadView(root, handlers) {
     else handlers.onRemoveMany?.(list)
   }
 
+  function deletePrompt(obj) {
+    return (
+      {
+        sticky: 'Delete this sticky note?',
+        stroke: 'Delete this drawing?',
+        arrow: 'Delete this arrow?',
+        image: 'Delete this image?',
+        text: 'Delete this text?',
+      }[obj?.kind] || 'Delete this?'
+    )
+  }
+
+  async function offerDelete(ids) {
+    const list = [...new Set(ids)].filter((id) => findObj(id))
+    if (!list.length) return
+    const title =
+      list.length > 1 ? `Delete ${list.length} items?` : deletePrompt(findObj(list[0]))
+    const ok = await confirmDialog({
+      title,
+      body: 'You can Ctrl+Z if this was a mistake.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (ok) removeIds(list)
+  }
+
   async function placeSticky(pt) {
     await handlers.onCreate({
       kind: 'sticky',
@@ -664,7 +691,21 @@ export function createPadView(root, handlers) {
   function onPointerDown(e) {
     if (isOff()) return
     hideMenu()
-    if (e.button === 1 || spaceHeld) {
+    if (e.button === 1) {
+      e.preventDefault()
+      const hit = e.target.closest?.('[data-id]')
+      if (hit?.dataset.id) {
+        const id = hit.dataset.id
+        const ids = state.selectedIds.has(id) && state.selectedIds.size > 1 ? selectedList() : [id]
+        offerDelete(ids)
+        return
+      }
+      gesture = { type: 'pan', x: e.clientX, y: e.clientY, pointerId: e.pointerId }
+      viewport.setPointerCapture(e.pointerId)
+      viewport.classList.add('is-panning')
+      return
+    }
+    if (spaceHeld) {
       e.preventDefault()
       gesture = { type: 'pan', x: e.clientX, y: e.clientY, pointerId: e.pointerId }
       viewport.setPointerCapture(e.pointerId)
@@ -967,6 +1008,20 @@ export function createPadView(root, handlers) {
   )
   viewport.addEventListener('wheel', onWheel, { passive: false })
   root.addEventListener('contextmenu', onContextMenu, true)
+  root.addEventListener(
+    'pointerdown',
+    (e) => {
+      if (e.button !== 1 || isOff()) return
+      const hit = e.target.closest?.('[data-id]')
+      if (!hit?.dataset.id) return
+      e.preventDefault()
+      e.stopPropagation()
+      const id = hit.dataset.id
+      const ids = state.selectedIds.has(id) && state.selectedIds.size > 1 ? selectedList() : [id]
+      offerDelete(ids)
+    },
+    true,
+  )
 
   fileInput = h('input', {
     type: 'file',
