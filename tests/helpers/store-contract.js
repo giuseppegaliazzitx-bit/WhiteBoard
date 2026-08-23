@@ -175,6 +175,75 @@ export function runStoreContract(name, makeStore) {
       })
     })
 
+    describe('people', () => {
+      it('starts with nobody', async () => {
+        expect(await store.listPeople()).toEqual([])
+      })
+
+      it('upserts a name so it shows up later', async () => {
+        const person = await store.upsertPerson({ name: 'Sam Rivera' })
+        expect(person.name).toBe('Sam Rivera')
+        expect(person.id).toBeTruthy()
+        const listed = await store.listPeople()
+        expect(listed).toHaveLength(1)
+        expect(listed[0].name).toBe('Sam Rivera')
+      })
+
+      it('reuses the same row for the same name ignoring case', async () => {
+        const first = await store.upsertPerson({ name: 'Sam' })
+        const second = await store.upsertPerson({ name: 'SAM' })
+        expect(second.id).toBe(first.id)
+        expect(await store.listPeople()).toHaveLength(1)
+      })
+
+      it('rejects a blank name', async () => {
+        await expect(store.upsertPerson({ name: '   ' })).rejects.toThrow()
+      })
+    })
+
+    describe('canvas', () => {
+      it('starts empty', async () => {
+        expect(await store.listCanvas()).toEqual([])
+      })
+
+      it('round-trips a sticky', async () => {
+        const obj = await store.createCanvasObject({
+          kind: 'sticky',
+          x: 10,
+          y: 20,
+          w: 200,
+          h: 200,
+          data: { text: 'hello', color: '#f5e6a3' },
+        })
+        expect(obj.kind).toBe('sticky')
+        expect(obj.data.text).toBe('hello')
+        expect(obj.x).toBe(10)
+        const listed = await store.listCanvas()
+        expect(listed).toHaveLength(1)
+        expect(listed[0].id).toBe(obj.id)
+      })
+
+      it('updates position', async () => {
+        const obj = await store.createCanvasObject({ kind: 'text', x: 0, y: 0, data: { text: 'A' } })
+        const next = await store.updateCanvasObject(obj.id, { x: 50, y: 60, kind: 'text' })
+        expect(next.x).toBe(50)
+        expect(next.y).toBe(60)
+        expect(next.kind).toBe('text')
+      })
+
+      it('removes an object', async () => {
+        const obj = await store.createCanvasObject({ kind: 'text', x: 0, y: 0 })
+        await store.removeCanvasObject(obj.id)
+        expect(await store.listCanvas()).toEqual([])
+      })
+
+      it('is idempotent -- deleting twice is not an error', async () => {
+        const obj = await store.createCanvasObject({ kind: 'sticky', x: 0, y: 0 })
+        await store.removeCanvasObject(obj.id)
+        await expect(store.removeCanvasObject(obj.id)).resolves.not.toThrow()
+      })
+    })
+
     describe('onStatus', () => {
       it('reports the current status immediately and hands back an unsubscribe', () => {
         // At least one: the current state is replayed on subscribe, and an

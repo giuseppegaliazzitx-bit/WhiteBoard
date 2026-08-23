@@ -158,6 +158,33 @@ async function checkProject({ url, key }) {
   pass('cards table exists')
   pass(`RLS allows the anon key to read it ${c.dim(`(${(payload || []).length} row(s) sampled)`)}`)
   hint('The policy is "for all", so writes use the same rule as reads')
+
+  const extras = [
+    ['people', 'the people roster'],
+    ['canvas_objects', 'the pad'],
+  ]
+  const ref = projectRef(url)
+  for (const [table, label] of extras) {
+    try {
+      const extra = await fetch(`${url}/rest/v1/${table}?select=id&limit=1`, {
+        headers: { apikey: key, Authorization: `Bearer ${key}` },
+      })
+      const extraBody = await extra.text()
+      let extraPayload = null
+      try { extraPayload = extraBody ? JSON.parse(extraBody) : null } catch { /* not JSON */ }
+      if (extraPayload?.code === 'PGRST205' || extra.status === 404) {
+        fail(`The ${table} table does not exist yet (${label})`)
+        hint('Re-run supabase/schema.sql — it is safe to run again:')
+        if (ref) hint(`  https://supabase.com/dashboard/project/${ref}/sql/new`)
+        return false
+      }
+      if (extra.ok) pass(`${table} table exists`)
+      else warn(`${table} returned HTTP ${extra.status}`)
+    } catch (err) {
+      warn(`Could not check ${table} — ${err.message}`)
+    }
+  }
+
   return true
 }
 

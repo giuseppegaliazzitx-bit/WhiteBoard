@@ -155,12 +155,14 @@ export function createDetail(deps) {
     })
 
     const chips = h('div', { class: 'chips' })
+    const assigneeList = h('datalist', { id: 'assignee-suggestions' })
     const assigneeInput = h('input', {
       class: 'input',
       type: 'text',
       placeholder: 'Add someone…',
       maxlength: String(LIMITS.assignee),
       autocomplete: 'off',
+      list: 'assignee-suggestions',
       'aria-label': 'Add an assignee',
       onkeydown: (e) => {
         if (e.key === 'Enter') {
@@ -243,6 +245,7 @@ export function createDetail(deps) {
           h('span', { class: 'field__label', text: 'Assignees' }),
           chips,
           h('div', { class: 'field__row', style: { 'margin-top': '7px' } }, assigneeInput, assigneeAdd),
+          assigneeList,
           suggestions,
         ),
         h(
@@ -286,7 +289,7 @@ export function createDetail(deps) {
 
     els = {
       panel, scrim, saved, eyebrow, title, stageButtons, tag, tagList, body,
-      chips, assigneeInput, suggestions, notes, notesLabel, noteInput, notePost, stamp,
+      chips, assigneeInput, assigneeList, suggestions, notes, notesLabel, noteInput, notePost, stamp,
     }
     return els
   }
@@ -386,6 +389,7 @@ export function createDetail(deps) {
     clear(els.suggestions)
     const assigned = new Set(card.assignees.map(personKey))
     const me = deps.identity.name
+    clear(els.assigneeList)
 
     if (!assigned.has(personKey(me))) {
       els.suggestions.appendChild(
@@ -399,6 +403,7 @@ export function createDetail(deps) {
     }
 
     for (const person of deps.getPeople()) {
+      els.assigneeList.appendChild(h('option', { value: person.name }))
       if (assigned.has(personKey(person.name)) || personKey(person.name) === personKey(me)) continue
       els.suggestions.appendChild(
         h(

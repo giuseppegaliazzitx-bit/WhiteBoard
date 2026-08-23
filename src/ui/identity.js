@@ -37,7 +37,7 @@ export function createIdentity() {
     const answer = await promptDialog({
       title: first ? 'What should we call you?' : 'Change your name',
       body: first
-        ? 'Used as the author on notes and to assign cards to yourself. Stored in this browser only.'
+        ? 'Used as the author on notes, and so the other person can assign cards to you.'
         : 'Existing notes keep the name they were written under.',
       label: 'Name',
       value: first ? '' : name,

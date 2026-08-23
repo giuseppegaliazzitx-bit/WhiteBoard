@@ -1,4 +1,5 @@
-import { normalizeCard, newId } from '../model.js'
+import { normalizeCard, normalizePerson, newId, personKey } from '../model.js'
+import { normalizeCanvasObject } from '../canvas-model.js'
 
 /**
  * Supabase adapter. Implements the same interface as the localStorage one --
@@ -12,9 +13,12 @@ import { normalizeCard, newId } from '../model.js'
  */
 
 const TABLE = 'cards'
+const PEOPLE_TABLE = 'people'
+const CANVAS_TABLE = 'canvas_objects'
 
 /** Columns a client is allowed to write. Everything else is server-owned. */
 const WRITABLE = ['title', 'body', 'status', 'tag', 'assignees', 'notes', 'position']
+const CANVAS_WRITABLE = ['kind', 'x', 'y', 'w', 'h', 'z', 'data']
 
 /**
  * Keep only writable keys, and run each through the same normalizer used on
@@ -26,6 +30,15 @@ function pickWritable(patch) {
   const normalized = normalizeCard(patch)
   const out = {}
   for (const key of WRITABLE) {
+    if (key in patch) out[key] = normalized[key]
+  }
+  return out
+}
+
+function pickCanvasWritable(patch) {
+  const normalized = normalizeCanvasObject(patch)
+  const out = {}
+  for (const key of CANVAS_WRITABLE) {
     if (key in patch) out[key] = normalized[key]
   }
   return out
@@ -47,7 +60,7 @@ function explain(error, fallback) {
   // thing to the person reading it.
   if (code === 'PGRST205' || code === '42P01' || /relation .* does not exist/i.test(message) ||
       /could not find the table/i.test(message)) {
-    return new Error('The `cards` table is missing. Run supabase/schema.sql on your project.')
+    return new Error('A table is missing. Re-run supabase/schema.sql on your project.')
   }
   if (/JWT|api key/i.test(message)) {
     return new Error('Supabase rejected the anon key. Check VITE_SUPABASE_ANON_KEY.')
@@ -84,12 +97,23 @@ export function createSupabaseStore({ client, boardId = 'main' }) {
 
   function openChannel() {
     if (channel) return
+    const onChange = () => fanOut(listeners)
     channel = client
       .channel(`board:${boardId}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: TABLE, filter: `board=eq.${boardId}` },
-        () => fanOut(listeners),
+        onChange,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: PEOPLE_TABLE, filter: `board=eq.${boardId}` },
+        onChange,
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: CANVAS_TABLE, filter: `board=eq.${boardId}` },
+        onChange,
       )
       .subscribe(setStatus)
   }
@@ -146,6 +170,67 @@ export function createSupabaseStore({ client, boardId = 'main' }) {
       // Deleting an absent row is not an error in Postgres, which matches the
       // contract's idempotency requirement.
       if (error) throw explain(error, 'Could not delete the card.')
+    },
+
+    async listPeople() {
+      const { data, error } = await client.from(PEOPLE_TABLE).select('*').eq('board', boardId)
+      if (error) throw explain(error, 'Could not load people.')
+      return (data || []).map(normalizePerson).filter((p) => p.name)
+    },
+
+    async upsertPerson({ name }) {
+      const trimmed = String(name || '').trim().slice(0, 60)
+      if (!trimmed) throw new Error('Name is required.')
+      const existing = (await this.listPeople()).find((p) => personKey(p.name) === personKey(trimmed))
+      if (existing) return existing
+
+      const { data, error } = await client
+        .from(PEOPLE_TABLE)
+        .insert({ id: newId(), name: trimmed, board: boardId })
+        .select()
+        .single()
+
+      if (error && (error.code === '23505' || /duplicate/i.test(error.message || ''))) {
+        const again = (await this.listPeople()).find((p) => personKey(p.name) === personKey(trimmed))
+        if (again) return again
+      }
+      if (error) throw explain(error, 'Could not save your name.')
+      return normalizePerson(data)
+    },
+
+    async listCanvas() {
+      const { data, error } = await client.from(CANVAS_TABLE).select('*').eq('board', boardId)
+      if (error) throw explain(error, 'Could not load the pad.')
+      return (data || []).map(normalizeCanvasObject)
+    },
+
+    async createCanvasObject(patch) {
+      const row = {
+        ...pickCanvasWritable(patch),
+        id: patch.id || newId(),
+        board: boardId,
+      }
+      const { data, error } = await client.from(CANVAS_TABLE).insert(row).select().single()
+      if (error) throw explain(error, 'Could not add that to the pad.')
+      return normalizeCanvasObject(data)
+    },
+
+    async updateCanvasObject(id, patch) {
+      const changes = pickCanvasWritable(patch)
+      if (!Object.keys(changes).length) {
+        const { data, error } = await client.from(CANVAS_TABLE).select('*').eq('id', id).single()
+        if (error) throw explain(error, 'That object no longer exists.')
+        return normalizeCanvasObject(data)
+      }
+      const { data, error } = await client.from(CANVAS_TABLE).update(changes).eq('id', id).select().single()
+      if (error) throw explain(error, 'Could not save the pad.')
+      if (!data) throw new Error('That object no longer exists.')
+      return normalizeCanvasObject(data)
+    },
+
+    async removeCanvasObject(id) {
+      const { error } = await client.from(CANVAS_TABLE).delete().eq('id', id)
+      if (error) throw explain(error, 'Could not delete that.')
     },
 
     /**

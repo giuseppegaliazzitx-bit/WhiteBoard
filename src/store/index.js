@@ -9,6 +9,8 @@
  *   create(p) -> Promise<Card>
  *   update(id, patch) -> Promise<Card>
  *   remove(id)        -> Promise<void>
+ *   listPeople() / upsertPerson({ name })
+ *   listCanvas() / createCanvasObject / updateCanvasObject / removeCanvasObject
  *   subscribe(fn)     -> unsubscribe
  *   close()           -> Promise<void>
  */

@@ -14,6 +14,10 @@
   <header class="topbar">
     <div class="topbar__lead">
       <h1 class="topbar__title">Board</h1>
+      <div class="view-tabs" role="tablist" aria-label="View">
+        <button id="tab-board" class="view-tab" type="button" role="tab" aria-selected="true" aria-controls="board">Board</button>
+        <button id="tab-pad" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="pad">Pad</button>
+      </div>
       <p class="progress" id="progress" aria-live="polite">&nbsp;</p>
     </div>
 
@@ -59,7 +63,10 @@
     <span id="filter-count" class="filter-bar__count"></span>
   </div>
 
-  <main id="board" class="board" tabindex="-1"></main>
+  <div id="workspace" class="workspace">
+    <main id="board" class="board" tabindex="-1"></main>
+    <div id="pad" class="pad" hidden></div>
+  </div>
 
   <div id="detail-root"></div>
   <div id="modal-root"></div>

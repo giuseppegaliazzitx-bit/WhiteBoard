@@ -199,3 +199,15 @@ export function avatarColor(name) {
   const isBright = hue > 40 && hue < 200
   return `hsl(${hue} 52% ${isBright ? 34 : 42}%)`
 }
+
+/** Someone who has named themselves on this board. */
+export function normalizePerson(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {}
+  return {
+    id: str(src.id, 64) || newId(),
+    name: str(src.name, LIMITS.assignee).trim(),
+    board: str(src.board, 64) || 'main',
+    created_at: isoOr(src.created_at),
+    updated_at: isoOr(src.updated_at),
+  }
+}

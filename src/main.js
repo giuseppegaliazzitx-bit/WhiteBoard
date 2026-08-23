@@ -11,6 +11,7 @@ import { createBoardView } from './ui/board.js'
 import { createDragController } from './ui/dnd.js'
 import { createDetail } from './ui/detail.js'
 import { createIdentity } from './ui/identity.js'
+import { createPadView } from './ui/pad.js'
 import { initTheme } from './ui/theme.js'
 import { toast, errorToast } from './ui/toast.js'
 import { h, clear, icon } from './ui/dom.js'
@@ -57,6 +58,14 @@ let seenIds = null
 
 /** @type {import('./model.js').Card[]} */
 let cards = []
+
+/** @type {import('./model.js').Person[]} */
+let people = []
+
+/** @type {import('./canvas-model.js').CanvasObject[]} */
+let padObjects = []
+
+let currentView = 'board'
 
 /** Active filters. `people` holds full names; the query holds everything else. */
 const filters = { query: '', people: [] }
@@ -218,7 +227,7 @@ const detail = createDetail({
   onDelete: deleteCard,
   onError: (err) => errorToast(err),
   makeNote: (text) => makeNote(identity.name, text),
-  getPeople: () => peopleFrom(cards),
+  getPeople: () => peopleFrom(cards, people),
   getTags: () => tagsFrom(cards),
   /** Cards moved by the stage buttons land at the bottom of their new column. */
   positionForStage: (status, movingId) => positionForAppend(columnCards(status, movingId)),
@@ -229,6 +238,68 @@ const drag = createDragController({
   layer: document.getElementById('drag-layer'),
   onMove: (id, status, index) => moveCard(id, status, index),
 })
+
+const pad = createPadView(document.getElementById('pad'), {
+  onCreate: createPadObject,
+  onPatch: patchPadObject,
+  onRemove: removePadObject,
+  onError: (err) => errorToast(err),
+})
+
+async function createPadObject(patch) {
+  try {
+    const created = await store.createCanvasObject(patch)
+    padObjects = [...padObjects, created]
+    pad.render(padObjects)
+    if (created.kind === 'sticky' || created.kind === 'text') pad.focusLast(created.kind)
+    return created
+  } catch (err) {
+    errorToast(err, 'Could not add that to the pad.')
+  }
+}
+
+async function patchPadObject(id, patch) {
+  const before = padObjects.find((o) => o.id === id)
+  if (!before) return
+  const next = { ...before, ...patch, data: patch.data ? { ...before.data, ...patch.data } : before.data }
+  padObjects = padObjects.map((o) => (o.id === id ? next : o))
+  pad.render(padObjects)
+  try {
+    const saved = await store.updateCanvasObject(id, { ...patch, kind: before.kind })
+    padObjects = padObjects.map((o) => (o.id === id ? saved : o))
+    pad.render(padObjects)
+  } catch (err) {
+    padObjects = padObjects.map((o) => (o.id === id ? before : o))
+    pad.render(padObjects)
+    errorToast(err, 'Could not save the pad.')
+  }
+}
+
+async function removePadObject(id) {
+  const before = padObjects
+  padObjects = padObjects.filter((o) => o.id !== id)
+  pad.render(padObjects)
+  try {
+    await store.removeCanvasObject(id)
+  } catch (err) {
+    padObjects = before
+    pad.render(padObjects)
+    errorToast(err, 'Could not delete that.')
+  }
+}
+
+function setView(name) {
+  currentView = name === 'pad' ? 'pad' : 'board'
+  document.body.dataset.view = currentView
+  document.getElementById('board').hidden = currentView !== 'board'
+  document.getElementById('pad').hidden = currentView !== 'pad'
+  const boardTab = document.getElementById('tab-board')
+  const padTab = document.getElementById('tab-pad')
+  if (boardTab) boardTab.setAttribute('aria-selected', String(currentView === 'board'))
+  if (padTab) padTab.setAttribute('aria-selected', String(currentView === 'pad'))
+  if (currentView === 'pad') history.replaceState(null, '', '#pad')
+  else history.replaceState(null, '', '#board')
+}
 
 // ------------------------------------------------------------------ chrome
 
@@ -288,6 +359,7 @@ function render() {
   renderPeople()
   renderFilterBar(shown, filtering)
   renderProgress(shown, filtering)
+  pad.render(padObjects)
 }
 
 function renderProgress(shown, filtering) {
@@ -305,10 +377,10 @@ function renderProgress(shown, filtering) {
 const MAX_PEOPLE_SHOWN = 5
 
 function renderPeople() {
-  const people = peopleFrom(cards)
+  const roster = peopleFrom(cards, people)
   clear(peopleEl)
 
-  for (const person of people.slice(0, MAX_PEOPLE_SHOWN)) {
+  for (const person of roster.slice(0, MAX_PEOPLE_SHOWN)) {
     const active = filters.people.some((n) => personKey(n) === personKey(person.name))
     const chip = avatar(person.name, 'avatar--sm')
     chip.removeAttribute('title')
@@ -320,7 +392,9 @@ function renderPeople() {
           class: 'people__btn',
           type: 'button',
           'aria-pressed': String(active),
-          title: `${person.name} — ${plural(person.count, 'card')}`,
+          title: person.count
+            ? `${person.name} — ${plural(person.count, 'card')}`
+            : `${person.name} — on the board`,
           'aria-label': `${active ? 'Stop filtering by' : 'Filter by'} ${person.name}`,
           onclick: () => togglePerson(person.name),
         },
@@ -329,12 +403,12 @@ function renderPeople() {
     )
   }
 
-  if (people.length > MAX_PEOPLE_SHOWN) {
+  if (roster.length > MAX_PEOPLE_SHOWN) {
     peopleEl.appendChild(
       h('span', {
         class: 'people__more',
-        text: `+${people.length - MAX_PEOPLE_SHOWN}`,
-        title: people.slice(MAX_PEOPLE_SHOWN).map((p) => p.name).join(', '),
+        text: `+${roster.length - MAX_PEOPLE_SHOWN}`,
+        title: roster.slice(MAX_PEOPLE_SHOWN).map((p) => p.name).join(', '),
       }),
     )
   }
@@ -392,6 +466,16 @@ function clearFilters() {
 
 async function refresh() {
   cards = await store.list()
+  try {
+    people = await store.listPeople()
+  } catch {
+    people = []
+  }
+  try {
+    padObjects = await store.listCanvas()
+  } catch {
+    padObjects = []
+  }
   render()
 
   // Highlight cards that appeared since the last read. Skipped on the first
@@ -449,14 +533,35 @@ document.getElementById('btn-identity').addEventListener('click', async () => {
   await identity.change()
 })
 
-identity.onChange(() => {
+identity.onChange((name) => {
   renderIdentity()
+  registerPerson(name)
   // Suggestions and note ownership both key off the name.
   if (detail.currentId) {
     const card = find(detail.currentId)
     if (card) detail.update(card)
   }
 })
+
+document.getElementById('tab-board')?.addEventListener('click', () => setView('board'))
+document.getElementById('tab-pad')?.addEventListener('click', () => setView('pad'))
+window.addEventListener('hashchange', () => {
+  setView(location.hash === '#pad' ? 'pad' : 'board')
+})
+
+async function registerPerson(name) {
+  if (!store || !name || name === 'Anonymous') return
+  try {
+    const person = await store.upsertPerson({ name })
+    if (!people.some((p) => personKey(p.name) === personKey(person.name))) {
+      people = [...people, person]
+      render()
+    }
+  } catch (err) {
+    // Older databases without the people table still run the board.
+    console.warn('[people]', err)
+  }
+}
 
 document.addEventListener('keydown', (e) => {
   const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable
@@ -478,7 +583,7 @@ document.addEventListener('keydown', (e) => {
 
   if (e.metaKey || e.ctrlKey || e.altKey) return
 
-  if (e.key === 'n') {
+  if (e.key === 'n' && currentView === 'board') {
     e.preventDefault()
     createCard(DEFAULT_STAGE, 'top')
   } else if (e.key === '/') {
@@ -521,6 +626,8 @@ async function boot() {
 
   await identity.ensure()
   renderIdentity()
+  await registerPerson(identity.name)
+  setView(location.hash === '#pad' ? 'pad' : 'board')
 }
 
 // Release the realtime channel promptly rather than waiting for a socket timeout.

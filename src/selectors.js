@@ -17,11 +17,18 @@ export function groupByStage(cards) {
 }
 
 /**
- * Everyone who appears on the board, most-assigned first.
- * There is no user table by design -- the roster is whoever has been assigned.
+ * Everyone known on this board: people who named themselves, plus anyone
+ * already assigned to a card. Most-assigned first; unassigned roster names
+ * still show so you can put them on a card.
  */
-export function peopleFrom(cards) {
+export function peopleFrom(cards, roster = []) {
   const counts = new Map()
+  for (const person of roster) {
+    const name = String(person?.name || '').trim()
+    if (!name) continue
+    const key = personKey(name)
+    if (!counts.has(key)) counts.set(key, { name, count: 0 })
+  }
   for (const card of cards) {
     for (const name of card.assignees) {
       const key = personKey(name)

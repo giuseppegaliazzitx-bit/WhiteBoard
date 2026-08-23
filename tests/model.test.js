@@ -12,6 +12,7 @@ import {
   normalizeNote,
   normalizeNotes,
   normalizeCard,
+  normalizePerson,
   makeNote,
   initials,
   avatarColor,
@@ -261,6 +262,22 @@ describe('makeNote', () => {
   it('survives round-tripping through the normalizer', () => {
     const note = makeNote('Sam', 'hello')
     expect(normalizeNote(note)).toEqual(note)
+  })
+})
+
+describe('normalizePerson', () => {
+  it('keeps a real name', () => {
+    expect(normalizePerson({ name: 'Sam Rivera' }).name).toBe('Sam Rivera')
+  })
+
+  it('trims and caps the name', () => {
+    expect(normalizePerson({ name: '  Sam  ' }).name).toBe('Sam')
+    expect(normalizePerson({ name: 'x'.repeat(200) }).name).toHaveLength(LIMITS.assignee)
+  })
+
+  it('turns garbage into an empty name rather than throwing', () => {
+    expect(normalizePerson(null).name).toBe('')
+    expect(normalizePerson({ name: 12 }).name).toBe('12')
   })
 })
 

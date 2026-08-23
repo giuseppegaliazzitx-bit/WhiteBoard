@@ -74,6 +74,22 @@ describe('boot', () => {
   it('lists the people on the board as filter buttons', () => {
     expect(document.querySelectorAll('#people .people__btn').length).toBeGreaterThan(0)
   })
+
+  it('registers the typed name on the people roster', async () => {
+    await waitFor(() => {
+      const names = [...document.querySelectorAll('#people .people__btn')].map((b) => b.getAttribute('aria-label') || b.title || '')
+      return names.some((n) => /sam rivera/i.test(n))
+    }, { label: 'Sam to appear in the people strip' })
+  })
+
+  it('switches to the pad without losing the board', () => {
+    click(document.getElementById('tab-pad'))
+    expect(document.body.dataset.view).toBe('pad')
+    expect(document.getElementById('pad').hidden).toBe(false)
+    click(document.getElementById('tab-board'))
+    expect(document.body.dataset.view).toBe('board')
+    expect(cardsIn('problem').length).toBeGreaterThan(0)
+  })
 })
 
 describe('search', () => {

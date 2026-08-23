@@ -122,3 +122,118 @@ exception when duplicate_object then null; end $$;
 -- Realtime delivers the old row on delete only when the replica identity is
 -- full; without this, a delete event carries just the primary key.
 alter table public.cards replica identity full;
+
+-- =============================================================================
+-- People
+--
+-- Anyone who sets a name on this board is stored here, so the assignee picker
+-- can offer real names even before that person has been put on a card.
+-- Unique on (board, lower(name)): "Sam" and "sam" are one person.
+-- =============================================================================
+
+create table if not exists public.people (
+  id         uuid primary key default gen_random_uuid(),
+  board      text        not null default 'main',
+  name       text        not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+do $$ begin
+  alter table public.people
+    add constraint people_name_len check (length(name) > 0 and length(name) <= 60);
+exception when duplicate_object then null; end $$;
+
+create unique index if not exists people_board_name_idx
+  on public.people (board, lower(name));
+
+drop trigger if exists people_touch_updated_at on public.people;
+create trigger people_touch_updated_at
+  before update on public.people
+  for each row execute function public.touch_updated_at();
+
+alter table public.people enable row level security;
+
+drop policy if exists "board access" on public.people;
+create policy "board access"
+  on public.people
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+do $$ begin
+  alter publication supabase_realtime add table public.people;
+exception when duplicate_object then null; end $$;
+
+alter table public.people replica identity full;
+
+-- =============================================================================
+-- Pad (shared notepad / whiteboard)
+--
+-- One row per sticky, text box, stroke or image. Two people dragging at once
+-- only collide if they edit the same object.
+-- =============================================================================
+
+create table if not exists public.canvas_objects (
+  id         uuid primary key default gen_random_uuid(),
+  board      text             not null default 'main',
+  kind       text             not null default 'sticky',
+  x          double precision not null default 0,
+  y          double precision not null default 0,
+  w          double precision not null default 0,
+  h          double precision not null default 0,
+  z          integer          not null default 0,
+  data       jsonb            not null default '{}'::jsonb,
+  created_at timestamptz      not null default now(),
+  updated_at timestamptz      not null default now()
+);
+
+do $$ begin
+  alter table public.canvas_objects
+    add constraint canvas_kind_check
+    check (kind in ('sticky', 'text', 'stroke', 'image'));
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.canvas_objects
+    add constraint canvas_finite check (
+      x = x and y = y and w = w and h = h
+      and abs(x) < 1e8 and abs(y) < 1e8
+      and w >= 0 and h >= 0 and w < 1e5 and h < 1e5
+    );
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.canvas_objects
+    add constraint canvas_data_is_object check (jsonb_typeof(data) = 'object');
+exception when duplicate_object then null; end $$;
+
+do $$ begin
+  alter table public.canvas_objects
+    add constraint canvas_size_check check (pg_column_size(data) <= 786432);
+exception when duplicate_object then null; end $$;
+
+create index if not exists canvas_objects_board_z_idx
+  on public.canvas_objects (board, z);
+
+drop trigger if exists canvas_objects_touch_updated_at on public.canvas_objects;
+create trigger canvas_objects_touch_updated_at
+  before update on public.canvas_objects
+  for each row execute function public.touch_updated_at();
+
+alter table public.canvas_objects enable row level security;
+
+drop policy if exists "board access" on public.canvas_objects;
+create policy "board access"
+  on public.canvas_objects
+  for all
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+do $$ begin
+  alter publication supabase_realtime add table public.canvas_objects;
+exception when duplicate_object then null; end $$;
+
+alter table public.canvas_objects replica identity full;

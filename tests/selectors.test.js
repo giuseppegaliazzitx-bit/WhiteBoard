@@ -58,6 +58,18 @@ describe('peopleFrom', () => {
     const people = peopleFrom([make({ assignees: ['Zoe', 'Alex', 'Mia'] })])
     expect(people.map((p) => p.name)).toEqual(['Alex', 'Mia', 'Zoe'])
   })
+
+  it('includes names from the people table even if they are not on a card yet', () => {
+    const people = peopleFrom([make({ assignees: ['Sam'] })], [{ name: 'Jo Park' }])
+    expect(people.map((p) => p.name)).toEqual(['Sam', 'Jo Park'])
+    expect(people.find((p) => p.name === 'Jo Park').count).toBe(0)
+  })
+
+  it('does not double-count a person who is both named and assigned', () => {
+    const people = peopleFrom([make({ assignees: ['Sam'] })], [{ name: 'sam' }])
+    expect(people).toHaveLength(1)
+    expect(people[0].count).toBe(1)
+  })
 })
 
 describe('progressOf', () => {

@@ -11,26 +11,51 @@
  */
 
 const DEFAULTS = {
-  title: '',
-  body: '',
-  status: 'problem',
-  tag: '',
-  assignees: [],
-  notes: [],
-  position: 1000,
-  board: 'main',
+  cards: {
+    title: '',
+    body: '',
+    status: 'problem',
+    tag: '',
+    assignees: [],
+    notes: [],
+    position: 1000,
+    board: 'main',
+  },
+  people: {
+    name: '',
+    board: 'main',
+  },
+  canvas_objects: {
+    kind: 'sticky',
+    x: 0,
+    y: 0,
+    w: 0,
+    h: 0,
+    z: 0,
+    data: {},
+    board: 'main',
+  },
 }
 
 const clone = (v) => JSON.parse(JSON.stringify(v))
 
 class Query {
-  constructor(db, op, payload) {
+  constructor(db, op, payload, table) {
     this.db = db
     this.op = op
     this.payload = payload
+    this.table = table
     this.filters = []
     this.returning = op === 'select'
     this.wantsSingle = false
+  }
+
+  rows() {
+    return this.db.tables[this.table] || []
+  }
+
+  setRows(rows) {
+    this.db.tables[this.table] = rows
   }
 
   select() {
@@ -60,7 +85,7 @@ class Query {
     }
 
     switch (this.op) {
-      case 'select':  return this.finish(this.db.rows.filter((r) => this.matches(r)))
+      case 'select':  return this.finish(this.rows().filter((r) => this.matches(r)))
       case 'insert':  return this.runInsert()
       case 'update':  return this.runUpdate()
       case 'delete':  return this.runDelete()
@@ -69,8 +94,8 @@ class Query {
   }
 
   runInsert() {
-    const row = { ...DEFAULTS, ...clone(this.payload) }
-    if (this.db.rows.some((r) => r.id === row.id)) {
+    const row = { ...(DEFAULTS[this.table] || {}), ...clone(this.payload) }
+    if (this.rows().some((r) => r.id === row.id)) {
       return {
         data: null,
         error: { code: '23505', message: 'duplicate key value violates unique constraint' },
@@ -79,19 +104,19 @@ class Query {
     const now = this.db.now()
     row.created_at = now
     row.updated_at = now
-    this.db.rows.push(row)
-    this.db.notify('INSERT', row)
+    this.rows().push(row)
+    this.db.notify('INSERT', row, this.table)
     return this.finish([row])
   }
 
   runUpdate() {
-    const hit = this.db.rows.filter((r) => this.matches(r))
+    const hit = this.rows().filter((r) => this.matches(r))
     for (const row of hit) {
       const { id, board, created_at, updated_at, ...safe } = clone(this.payload)
       Object.assign(row, safe)
       // The trigger in schema.sql: server clock wins, created_at is immutable.
       row.updated_at = this.db.now()
-      this.db.notify('UPDATE', row)
+      this.db.notify('UPDATE', row, this.table)
     }
     return this.finish(hit)
   }
@@ -99,9 +124,9 @@ class Query {
   runDelete() {
     const kept = []
     const removed = []
-    for (const row of this.db.rows) (this.matches(row) ? removed : kept).push(row)
-    this.db.rows = kept
-    for (const row of removed) this.db.notify('DELETE', row)
+    for (const row of this.rows()) (this.matches(row) ? removed : kept).push(row)
+    this.setRows(kept)
+    for (const row of removed) this.db.notify('DELETE', row, this.table)
     // Deleting nothing is not an error in Postgres.
     return this.finish(removed)
   }
@@ -138,8 +163,8 @@ class FakeChannel {
     this.subscribed = false
   }
 
-  on(_event, _filter, handler) {
-    this.handlers.push(handler)
+  on(_event, filter, handler) {
+    this.handlers.push({ table: filter?.table, handler })
     return this
   }
 
@@ -151,32 +176,39 @@ class FakeChannel {
   }
 
   emit(payload) {
-    for (const handler of this.handlers) handler(payload)
+    for (const { table, handler } of this.handlers) {
+      if (table && payload.table && table !== payload.table) continue
+      handler(payload)
+    }
   }
 }
 
-export function createFakeSupabase({ rows = [], clock } = {}) {
+export function createFakeSupabase({ rows = [], people = [], canvas = [], clock } = {}) {
   let tick = 0
 
   const db = {
-    rows: clone(rows),
+    tables: {
+      cards: clone(rows),
+      people: clone(people),
+      canvas_objects: clone(canvas),
+    },
     channels: new Set(),
     nextError: null,
     now: clock || (() => new Date(Date.UTC(2026, 0, 1, 0, 0, 0, tick++)).toISOString()),
-    notify(eventType, row) {
+    notify(eventType, row, table = 'cards') {
       for (const channel of db.channels) {
-        channel.emit({ eventType, new: clone(row), old: clone(row) })
+        channel.emit({ eventType, table, new: clone(row), old: clone(row) })
       }
     },
   }
 
   const client = {
-    from() {
+    from(table = 'cards') {
       return {
-        select: () => new Query(db, 'select'),
-        insert: (payload) => new Query(db, 'insert', payload),
-        update: (payload) => new Query(db, 'update', payload),
-        delete: () => new Query(db, 'delete'),
+        select: () => new Query(db, 'select', null, table),
+        insert: (payload) => new Query(db, 'insert', payload, table),
+        update: (payload) => new Query(db, 'update', payload, table),
+        delete: () => new Query(db, 'delete', null, table),
       }
     },
 
@@ -194,7 +226,13 @@ export function createFakeSupabase({ rows = [], clock } = {}) {
     client,
     /** Rows currently "in the database". */
     get rows() {
-      return db.rows
+      return db.tables.cards
+    },
+    get people() {
+      return db.tables.people
+    },
+    get canvas() {
+      return db.tables.canvas_objects
     },
     /** Number of live realtime channels -- used to assert cleanup. */
     get channelCount() {

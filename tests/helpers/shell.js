@@ -14,7 +14,12 @@ export function installShell() {
     <button id="btn-theme"></button>
     <span id="conn"><i class="conn__dot"></i><span class="conn__label"></span></span>
     <div id="filter-bar" hidden><div id="filter-chips"></div><button id="filter-clear"></button><span id="filter-count"></span></div>
-    <main id="board"></main>
+    <button id="tab-board"></button>
+    <button id="tab-pad"></button>
+    <div id="workspace">
+      <main id="board"></main>
+      <div id="pad" hidden></div>
+    </div>
     <div id="detail-root"></div>
     <div id="modal-root"></div>
     <div id="toast-root"></div>
