@@ -111,33 +111,58 @@ export function createPadView(root, handlers) {
     return renderStroke(obj)
   }
 
+  function handlePx(w, h) {
+    return Math.round(Math.max(14, Math.min(40, Math.min(w, h) * 0.14)))
+  }
+
+  function startMove(e, obj) {
+    if (e.button !== 0) return
+    if (spaceHeld || state.tool === 'draw') return
+    e.stopPropagation()
+    e.preventDefault()
+    select(obj.id)
+    const start = worldPoint(e)
+    gesture = {
+      type: 'move',
+      id: obj.id,
+      dx: start.x - obj.x,
+      dy: start.y - obj.y,
+      pointerId: e.pointerId,
+    }
+    viewport.setPointerCapture(e.pointerId)
+  }
+
   function bindMoveHandle(node, obj) {
     node.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return
-      if (spaceHeld || state.tool === 'draw') return
-      if (state.tool !== 'select' && state.tool !== 'sticky' && state.tool !== 'text') return
       if (isEditing(e.target)) return
-      if (e.target.closest?.('.pad-resize, a')) return
-      e.stopPropagation()
-      e.preventDefault()
-      select(obj.id)
-      const start = worldPoint(e)
-      gesture = {
-        type: 'move',
-        id: obj.id,
-        dx: start.x - obj.x,
-        dy: start.y - obj.y,
-        pointerId: e.pointerId,
-      }
-      viewport.setPointerCapture(e.pointerId)
+      if (e.target.closest?.('.pad-resize, .pad-move, a, textarea')) return
+      startMove(e, obj)
     })
   }
 
+  function moveHandle(obj) {
+    const size = Math.round(handlePx(obj.w, obj.h) * 1.15)
+    return h(
+      'button',
+      {
+        class: 'pad-move',
+        type: 'button',
+        title: 'Move',
+        'aria-label': 'Move',
+        style: { width: `${size}px`, height: `${Math.round(size * 0.7)}px` },
+        onpointerdown: (e) => startMove(e, obj),
+      },
+      icon('move'),
+    )
+  }
+
   function resizeHandle(obj, { keepRatio = false } = {}) {
+    const size = handlePx(obj.w, obj.h)
     return h('div', {
       class: 'pad-resize',
       title: 'Resize',
       'aria-label': 'Resize',
+      style: { width: `${size}px`, height: `${size}px` },
       onpointerdown: (e) => {
         if (e.button !== 0) return
         e.stopPropagation()
@@ -161,10 +186,6 @@ export function createPadView(root, handlers) {
   }
 
   function renderSticky(obj) {
-    const view = h('div', { class: 'pad-sticky__view' })
-    fillLinked(view, obj.data.text)
-    view.style.fontSize = `${obj.data.fontSize}px`
-
     const area = h('textarea', {
       class: 'pad-sticky__text',
       spellcheck: 'false',
@@ -175,19 +196,11 @@ export function createPadView(root, handlers) {
       onblur: (e) => {
         node.classList.remove('is-editing')
         const text = e.target.value
-        fillLinked(view, text)
         if (text !== obj.data.text) handlers.onPatch(obj.id, { data: { ...obj.data, text } })
       },
     })
     area.value = obj.data.text
     area.style.fontSize = `${obj.data.fontSize}px`
-
-    view.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('a')) return
-      e.stopPropagation()
-      node.classList.add('is-editing')
-      area.focus()
-    })
 
     const node = h(
       'div',
@@ -203,13 +216,11 @@ export function createPadView(root, handlers) {
           'background-color': obj.data.color,
         },
       },
-      view,
+      moveHandle(obj),
       area,
       resizeHandle(obj),
     )
     if (obj.id === state.selectedId) node.classList.add('is-selected')
-    if (!obj.data.text) node.classList.add('is-editing')
-    bindMoveHandle(node, obj)
     return node
   }
 
@@ -570,6 +581,17 @@ export function createPadView(root, handlers) {
       if (node) {
         node.style.width = `${w}px`
         node.style.height = `${h}px`
+        const size = handlePx(w, h)
+        const resize = node.querySelector('.pad-resize')
+        if (resize) {
+          resize.style.width = `${size}px`
+          resize.style.height = `${size}px`
+        }
+        const mover = node.querySelector('.pad-move')
+        if (mover) {
+          mover.style.width = `${Math.round(size * 1.15)}px`
+          mover.style.height = `${Math.round(size * 0.8)}px`
+        }
       }
       gesture.lastW = w
       gesture.lastH = h

@@ -1,8 +1,9 @@
 /**
- * Lined notepad pages. A list of titled sheets, one open at a time.
+ * Lined notepad. A thin tab bar up top (+ to add a page), a title, and
+ * a ruled page you type on.
  */
 import { h, clear, icon } from './dom.js'
-import { fillLinked } from '../linkify.js'
+import { fillLinked, hasLinks } from '../linkify.js'
 import { SHEET_LIMITS } from '../sheet-model.js'
 
 const AUTOSAVE_MS = 450
@@ -13,11 +14,11 @@ export function createSheetsView(root, handlers) {
   let saveTimer = null
   let pending = {}
 
-  const listEl = h('div', { class: 'sheets__list', role: 'list' })
+  const tabs = h('div', { class: 'sheets__tabs', role: 'tablist', 'aria-label': 'Sheets' })
   const title = h('input', {
     class: 'sheets__title',
     type: 'text',
-    placeholder: 'Title',
+    placeholder: 'Name this sheet',
     maxlength: String(SHEET_LIMITS.title),
     'aria-label': 'Sheet title',
     oninput: (e) => queue({ title: e.target.value }),
@@ -25,81 +26,72 @@ export function createSheetsView(root, handlers) {
   })
   const body = h('textarea', {
     class: 'sheets__body',
-    placeholder: 'Write…',
+    placeholder: 'Start writing…',
     spellcheck: 'true',
     maxlength: String(SHEET_LIMITS.body),
     'aria-label': 'Sheet body',
     oninput: (e) => {
       queue({ body: e.target.value })
-      paintView(e.target.value)
+      paintLinks(e.target.value)
     },
-    onfocus: () => paper.classList.add('is-editing'),
-    onblur: () => {
-      paper.classList.remove('is-editing')
-      flush()
+    onblur: flush,
+  })
+  const links = h('div', { class: 'sheets__links' })
+  const delBtn = h(
+    'button',
+    {
+      class: 'icon-btn icon-btn--danger sheets__del',
+      type: 'button',
+      'aria-label': 'Delete this sheet',
+      title: 'Delete this sheet',
+      onclick: () => currentId && handlers.onRemove(currentId),
     },
-  })
-  const view = h('div', { class: 'sheets__view', 'aria-hidden': 'true' })
-  view.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('a')) return
-    paper.classList.add('is-editing')
-    body.focus()
-  })
+    icon('trash'),
+  )
+
+  const bar = h(
+    'div',
+    { class: 'sheets__bar' },
+    h(
+      'button',
+      {
+        class: 'sheets__add',
+        type: 'button',
+        'aria-label': 'New sheet',
+        title: 'New sheet',
+        onclick: () => handlers.onCreate(),
+      },
+      icon('plus'),
+    ),
+    tabs,
+    delBtn,
+  )
 
   const paper = h(
     'div',
     { class: 'sheets__paper' },
-    h(
-      'div',
-      { class: 'sheets__paper-head' },
-      title,
-      h(
-        'button',
-        {
-          class: 'icon-btn icon-btn--danger',
-          type: 'button',
-          'aria-label': 'Delete sheet',
-          title: 'Delete sheet',
-          onclick: () => currentId && handlers.onRemove(currentId),
-        },
-        icon('trash'),
-      ),
-    ),
-    h('div', { class: 'sheets__stack' }, view, body),
+    title,
+    links,
+    body,
   )
+
   const empty = h(
     'div',
     { class: 'sheets__empty' },
     h('p', { text: 'No sheets yet.' }),
-    h('button', { class: 'btn btn--primary', type: 'button', onclick: () => handlers.onCreate() }, icon('plus'), h('span', { text: 'New sheet' })),
-  )
-  const stage = h('div', { class: 'sheets__stage' }, paper, empty)
-
-  const nav = h(
-    'aside',
-    { class: 'sheets__nav' },
     h(
-      'header',
-      { class: 'sheets__nav-head' },
-      h('span', { class: 'sheets__nav-label', text: 'Sheets' }),
-      h(
-        'button',
-        {
-          class: 'icon-btn',
-          type: 'button',
-          'aria-label': 'New sheet',
-          title: 'New sheet',
-          onclick: () => handlers.onCreate(),
-        },
-        icon('plus'),
-      ),
+      'button',
+      { class: 'btn btn--primary', type: 'button', onclick: () => handlers.onCreate() },
+      icon('plus'),
+      h('span', { text: 'New sheet' }),
     ),
-    listEl,
   )
+
+  const stage = h('div', { class: 'sheets__stage' }, paper, empty)
 
   root.classList.add('sheets')
   clear(root)
-  root.append(nav, stage)
+  root.append(bar, stage)
 
   function current() {
     return sheets.find((s) => s.id === currentId) || null
@@ -109,7 +101,7 @@ export function createSheetsView(root, handlers) {
     Object.assign(pending, patch)
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(flush, AUTOSAVE_MS)
-    if ('title' in patch) paintList()
+    if ('title' in patch) paintTabs()
   }
 
   async function flush() {
@@ -123,30 +115,37 @@ export function createSheetsView(root, handlers) {
     await handlers.onPatch(currentId, patch)
   }
 
-  function paintView(text) {
-    fillLinked(view, text || '')
+  function paintLinks(text) {
+    if (!hasLinks(text)) {
+      clear(links)
+      links.hidden = true
+      return
+    }
+    links.hidden = false
+    fillLinked(links, text)
   }
 
-  function paintList() {
-    const scroll = listEl.scrollTop
-    clear(listEl)
+  function paintTabs() {
+    const scroll = tabs.scrollLeft
+    clear(tabs)
     for (const sheet of sheets) {
       const label = sheet.title.trim() || 'Untitled'
-      listEl.appendChild(
+      tabs.appendChild(
         h(
           'button',
           {
-            class: 'sheets__item',
+            class: 'sheets__tab',
             type: 'button',
-            role: 'listitem',
-            'aria-current': String(sheet.id === currentId),
+            role: 'tab',
+            'aria-selected': String(sheet.id === currentId),
+            title: label,
             onclick: () => select(sheet.id),
           },
-          h('span', { class: 'sheets__item-title', text: label }),
+          h('span', { text: label }),
         ),
       )
     }
-    listEl.scrollTop = scroll
+    tabs.scrollLeft = scroll
   }
 
   function paintPaper() {
@@ -154,21 +153,18 @@ export function createSheetsView(root, handlers) {
     const has = Boolean(sheet)
     paper.hidden = !has
     empty.hidden = has
+    delBtn.hidden = !has
     if (!sheet) return
     if (document.activeElement !== title) title.value = sheet.title
     if (document.activeElement !== body) body.value = sheet.body
-    paintView(sheet.body)
-    if (!sheet.body && !sheet.title) {
-      paper.classList.add('is-editing')
-    }
+    paintLinks(sheet.body)
   }
 
   async function select(id) {
     if (id === currentId) return
     await flush()
     currentId = id
-    paper.classList.remove('is-editing')
-    paintList()
+    paintTabs()
     paintPaper()
   }
 
@@ -178,7 +174,7 @@ export function createSheetsView(root, handlers) {
       if (selectId) currentId = selectId
       if (currentId && !sheets.some((s) => s.id === currentId)) currentId = null
       if (!currentId && sheets[0]) currentId = sheets[0].id
-      paintList()
+      paintTabs()
       paintPaper()
     },
     get currentId() {
@@ -188,7 +184,6 @@ export function createSheetsView(root, handlers) {
       await flush()
     },
     focusTitle() {
-      paper.classList.add('is-editing')
       title.focus()
     },
   }
