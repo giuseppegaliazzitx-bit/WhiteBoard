@@ -9,6 +9,31 @@ export const SHEET_LIMITS = {
   body: 100_000,
 }
 
+/** Must match `.sheets__body` line-height. */
+export const SHEET_LINE = 32
+
+/** Ensure `text` has a row at `lineIndex` (0-based), padding with blank lines. */
+export function padToLine(text, lineIndex) {
+  const src = String(text || '')
+  const index = Math.max(0, Math.floor(Number(lineIndex) || 0))
+  const parts = src.split('\n')
+  if (index < parts.length) return src
+  return parts.concat(Array(index - parts.length + 1).fill('')).join('\n')
+}
+
+/** Character offset at the start of `lineIndex`. */
+export function offsetAtLine(text, lineIndex) {
+  const src = String(text || '')
+  const parts = src.split('\n')
+  const index = Math.min(
+    Math.max(0, Math.floor(Number(lineIndex) || 0)),
+    Math.max(0, parts.length - 1),
+  )
+  let offset = 0
+  for (let i = 0; i < index; i++) offset += parts[i].length + 1
+  return offset
+}
+
 function str(value, max) {
   if (typeof value === 'string') return value.slice(0, max)
   if (value === null || value === undefined) return ''

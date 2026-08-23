@@ -1039,12 +1039,13 @@ body[data-view="whiteboard"] .sheets { display: none !important; }
   min-height: 480px;
   width: 100%;
   margin: 0;
-  padding: 6px 0 24px;
+  padding: 0 0 24px;
   border: none;
   resize: none;
   color: inherit;
   font-size: 16px;
-  line-height: 32px;
+  line-height: 32px; /* keep in sync with SHEET_LINE */
+  white-space: pre;
   background-color: transparent;
   background-image: repeating-linear-gradient(
     to bottom,

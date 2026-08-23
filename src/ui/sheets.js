@@ -4,7 +4,7 @@
  */
 import { h, clear, icon } from './dom.js'
 import { fillLinked, hasLinks } from '../linkify.js'
-import { SHEET_LIMITS } from '../sheet-model.js'
+import { SHEET_LIMITS, SHEET_LINE, padToLine, offsetAtLine } from '../sheet-model.js'
 
 const AUTOSAVE_MS = 450
 
@@ -26,7 +26,7 @@ export function createSheetsView(root, handlers) {
   })
   const body = h('textarea', {
     class: 'sheets__body',
-    placeholder: 'Start writing…',
+    placeholder: 'Click a line and type…',
     spellcheck: 'true',
     maxlength: String(SHEET_LIMITS.body),
     'aria-label': 'Notepad',
@@ -36,6 +36,7 @@ export function createSheetsView(root, handlers) {
     },
     onblur: flush,
   })
+  body.addEventListener('pointerdown', (e) => goToClickedLine(e))
   const links = h('div', { class: 'sheets__links' })
   const delBtn = h(
     'button',
@@ -76,7 +77,8 @@ export function createSheetsView(root, handlers) {
   )
   paper.addEventListener('pointerdown', (e) => {
     if (e.target === title || e.target.closest('a')) return
-    if (e.target !== body) body.focus()
+    if (e.target === body) return
+    goToClickedLine(e)
   })
 
   const empty = h(
@@ -99,6 +101,35 @@ export function createSheetsView(root, handlers) {
 
   function current() {
     return sheets.find((s) => s.id === currentId) || null
+  }
+
+  function lineFromPointer(e) {
+    const box = body.getBoundingClientRect()
+    const padTop = parseFloat(getComputedStyle(body).paddingTop) || 0
+    const y = e.clientY - box.top + body.scrollTop - padTop
+    return Math.max(0, Math.floor(y / SHEET_LINE))
+  }
+
+  function goToClickedLine(e) {
+    const line = lineFromPointer(e)
+    const parts = body.value.split('\n')
+    if (line < parts.length) {
+      if (e.target !== body) {
+        const pos = offsetAtLine(body.value, line)
+        body.focus()
+        body.setSelectionRange(pos, pos)
+      }
+      return
+    }
+    e.preventDefault()
+    const next = padToLine(body.value, line).slice(0, SHEET_LIMITS.body)
+    if (next !== body.value) {
+      body.value = next
+      queue({ body: next })
+    }
+    const pos = offsetAtLine(body.value, line)
+    body.focus()
+    body.setSelectionRange(pos, pos)
   }
 
   function queue(patch) {
