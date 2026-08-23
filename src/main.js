@@ -250,12 +250,30 @@ const drag = createDragController({
   onMove: (id, status, index) => moveCard(id, status, index),
 })
 
-const pad = createPadView(document.getElementById('pad'), {
-  onCreate: createPadObject,
-  onPatch: patchPadObject,
-  onRemove: removePadObject,
-  onError: (err) => errorToast(err),
-})
+const noopView = { render() {}, focusLast() {}, get currentId() { return null }, flush() {}, focusTitle() {} }
+
+function mountView(id, factory) {
+  const el = document.getElementById(id)
+  if (!el) {
+    console.warn(`[board] #${id} is missing from the page — that view will stay off.`)
+    return noopView
+  }
+  try {
+    return factory(el)
+  } catch (err) {
+    console.error(`[board] ${id} failed to start`, err)
+    return noopView
+  }
+}
+
+const pad = mountView('pad', (el) =>
+  createPadView(el, {
+    onCreate: createPadObject,
+    onPatch: patchPadObject,
+    onRemove: removePadObject,
+    onError: (err) => errorToast(err),
+  }),
+)
 
 async function createPadObject(patch, { record = true } = {}) {
   try {
@@ -312,11 +330,13 @@ async function removePadObject(id, { record = true } = {}) {
   }
 }
 
-const sheetsView = createSheetsView(document.getElementById('sheets'), {
-  onCreate: () => createSheet(),
-  onPatch: patchSheet,
-  onRemove: deleteSheet,
-})
+const sheetsView = mountView('sheets', (el) =>
+  createSheetsView(el, {
+    onCreate: () => createSheet(),
+    onPatch: patchSheet,
+    onRemove: deleteSheet,
+  }),
+)
 
 async function createSheet(patch = {}, { record = true } = {}) {
   try {
@@ -394,14 +414,16 @@ function setView(name) {
   const next = VIEWS.includes(name) ? name : 'board'
   currentView = next
   document.body.dataset.view = currentView
-  document.getElementById('board').hidden = currentView !== 'board'
-  document.getElementById('pad').hidden = currentView !== 'pad'
-  const sheetsEl = document.getElementById('sheets')
-  if (sheetsEl) sheetsEl.hidden = currentView !== 'sheets'
   for (const viewName of VIEWS) {
+    const el = document.getElementById(viewName)
+    if (el) el.hidden = viewName !== currentView
     document.getElementById(`tab-${viewName}`)?.setAttribute('aria-selected', String(currentView === viewName))
   }
-  history.replaceState(null, '', `#${currentView}`)
+  try {
+    history.replaceState(null, '', `#${currentView}`)
+  } catch {
+    /* ignore: some embedded previews block history */
+  }
 }
 
 // ------------------------------------------------------------------ chrome
@@ -608,7 +630,7 @@ async function refresh() {
 
 initTheme(document.getElementById('btn-theme'))
 
-document.getElementById('btn-new').addEventListener('click', () => createCard(DEFAULT_STAGE, 'top'))
+document.getElementById('btn-new')?.addEventListener('click', () => createCard(DEFAULT_STAGE, 'top'))
 
 // Typing filters live. Debounced so a long query does not re-render the whole
 // board on every keystroke.
@@ -756,6 +778,9 @@ window.addEventListener('pagehide', () => {
 boot().catch((err) => {
   console.error(err)
   const board = document.getElementById('board')
+  if (!board) return
+  setView('board')
+  board.hidden = false
   clear(board)
   board.appendChild(
     h(

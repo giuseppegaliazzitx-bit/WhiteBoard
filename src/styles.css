@@ -119,6 +119,11 @@ button, input, textarea, select { font: inherit; color: inherit; }
   clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
 }
 
+/* Author `display: flex` on .board/.pad/.sheets/.filter-bar otherwise wins
+   over the UA [hidden] rule, so a "hidden" pad can still paint over the
+   board and swallow every click. */
+[hidden] { display: none !important; }
+
 /* ---------------------------------------------------------------------------
    Buttons and inputs
 --------------------------------------------------------------------------- */
@@ -276,6 +281,7 @@ input[type="search"]::-webkit-search-cancel-button { display: none; }
   min-height: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
 }
 
 body[data-view="pad"] .topbar__search,
@@ -303,7 +309,8 @@ body[data-view="sheets"] #filter-bar { display: none; }
 }
 .board:focus { outline: none; }
 .board[hidden],
-body[data-view="pad"] .board { display: none; }
+body[data-view="pad"] .board,
+body[data-view="sheets"] .board { display: none !important; }
 
 .column {
   display: flex; flex-direction: column;
@@ -648,9 +655,12 @@ kbd {
   display: flex;
   flex-direction: column;
   background: var(--bg);
+  position: absolute;
+  inset: 0;
 }
-.pad[hidden] { display: none; }
-body[data-view="board"] .pad { display: none; }
+.pad[hidden] { display: none !important; }
+body[data-view="board"] .pad,
+body[data-view="sheets"] .pad { display: none !important; }
 
 .pad__toolbar {
   flex: none;
@@ -808,11 +818,12 @@ body[data-view="board"] .pad { display: none; }
   min-height: 0;
   display: flex;
   background: var(--bg);
+  position: absolute;
+  inset: 0;
 }
 .sheets[hidden],
 body[data-view="board"] .sheets,
-body[data-view="pad"] .sheets { display: none; }
-body[data-view="sheets"] .pad { display: none; }
+body[data-view="pad"] .sheets { display: none !important; }
 
 .sheets__nav {
   flex: none;

@@ -484,8 +484,12 @@ export function createPadView(root, handlers) {
 
   // ---------------------------------------------------------------- pointer
 
+  function isOff() {
+    return root.hidden || document.body.dataset.view === 'board' || document.body.dataset.view === 'sheets'
+  }
+
   function onPointerDown(e) {
-    if (root.hidden) return
+    if (isOff()) return
     if (e.button === 1 || spaceHeld) {
       e.preventDefault()
       gesture = { type: 'pan', x: e.clientX, y: e.clientY, pointerId: e.pointerId }
@@ -600,7 +604,7 @@ export function createPadView(root, handlers) {
   }
 
   function onWheel(e) {
-    if (root.hidden) return
+    if (isOff()) return
     e.preventDefault()
     const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1
     state.camera = zoomAt(state.camera, e.clientX, e.clientY, factor, rect())
@@ -608,7 +612,7 @@ export function createPadView(root, handlers) {
   }
 
   function onKeyDown(e) {
-    if (root.hidden) return
+    if (isOff()) return
     if (e.code === 'Space' && !isEditing(e.target)) {
       spaceHeld = true
       viewport.classList.add('is-space')
