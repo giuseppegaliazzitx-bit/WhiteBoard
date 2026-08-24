@@ -252,3 +252,28 @@ describe('board extras', () => {
     await waitFor(() => document.getElementById('filter-bar').hidden === true, { label: 'the clear' })
   })
 })
+
+describe('card context menu', () => {
+  it('stops the browser menu and lists move and delete', () => {
+    const card = allCards()[0]
+    const ev = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40, button: 2 })
+    card.dispatchEvent(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    const menu = document.querySelector('.ctx-menu')
+    expect(menu.hidden).toBe(false)
+    expect(menu.textContent).toMatch(/Move to/)
+    expect(menu.textContent).toMatch(/Delete/)
+  })
+
+  it('moves the card into another column', async () => {
+    const card = allCards()[0]
+    const title = card.querySelector('.card__title').textContent
+    const dest = card.dataset.status === 'done' ? 'Idea' : 'Done'
+    const destId = dest === 'Idea' ? 'idea' : 'done'
+    click(buttonWithText(document.querySelector('.ctx-menu'), dest))
+    await waitFor(() => {
+      const node = allCards().find((c) => c.querySelector('.card__title').textContent === title)
+      return node?.dataset.status === destId
+    }, { label: 'the card to change column' })
+  })
+})

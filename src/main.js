@@ -244,6 +244,26 @@ const view = createBoardView(document.getElementById('board'), {
   onFilterStale: () => toggleQueryToken('flag', 'stale', 'is:stale'),
   getMe: () => (identity.isDefault ? '' : identity.name),
   onHideDone: () => render(),
+  onMoveTo: (id, status) => {
+    const card = find(id)
+    if (!card || card.status === status) return
+    moveCard(id, status, columnCards(status, id).length)
+  },
+  onDelete: async (id) => {
+    const card = find(id)
+    if (!card) return
+    const ok = await confirmDialog({
+      title: 'Delete this card?',
+      body: card.title.trim()
+        ? `"${card.title.trim()}" and its ${plural(card.notes.length, 'note')} will be removed.`
+        : 'This untitled card will be removed.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
+    if (detail.currentId === id) detail.close()
+    await deleteCard(card)
+  },
 })
 
 const detail = createDetail({
@@ -501,6 +521,7 @@ function setView(name) {
   }
   const hash = detail.currentId && next === 'board' ? `#c/${encodeURIComponent(detail.currentId)}` : `#${currentView}`
   replaceHash(hash)
+  if (next !== 'board') view.hideMenu?.()
   if (next === 'notepad' && store && !sheets.length) createSheet({ record: false })
 }
 

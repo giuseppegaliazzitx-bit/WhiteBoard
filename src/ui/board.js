@@ -82,6 +82,111 @@ export function createBoardView(root, handlers) {
     columns.set(stage.id, { column, body, count, hideBtn })
   }
 
+  const menu = h('div', { class: 'ctx-menu', hidden: true, role: 'menu', 'aria-label': 'Card actions' })
+  document.body.appendChild(menu)
+
+  function hideMenu() {
+    menu.hidden = true
+    clear(menu)
+  }
+
+  function placeMenu(clientX, clientY) {
+    menu.style.left = `${clientX}px`
+    menu.style.top = `${clientY}px`
+    const box = menu.getBoundingClientRect()
+    const pad = 8
+    let x = clientX
+    let y = clientY
+    if (box.right > window.innerWidth - pad) x = Math.max(pad, clientX - box.width)
+    if (box.bottom > window.innerHeight - pad) y = Math.max(pad, clientY - box.height)
+    menu.style.left = `${x}px`
+    menu.style.top = `${y}px`
+  }
+
+  function showMenu(e, cardEl) {
+    const id = cardEl.dataset.id
+    const status = cardEl.dataset.status
+    clear(menu)
+
+    menu.appendChild(h('div', { class: 'ctx-menu__label', text: 'Move to' }))
+    for (const stage of STAGES) {
+      const current = stage.id === status
+      menu.appendChild(
+        h(
+          'button',
+          {
+            class: 'ctx-menu__item',
+            type: 'button',
+            role: 'menuitem',
+            'aria-current': current ? 'true' : undefined,
+            onclick: () => {
+              hideMenu()
+              if (!current) handlers.onMoveTo?.(id, stage.id)
+            },
+          },
+          h('i', { class: 'ctx-menu__dot', style: { '--dot': `var(--stage-${stage.id})` } }),
+          h('span', { text: stage.name }),
+          current && icon('check'),
+        ),
+      )
+    }
+
+    menu.appendChild(h('div', { class: 'ctx-menu__sep' }))
+    menu.appendChild(
+      h(
+        'button',
+        {
+          class: 'ctx-menu__item ctx-menu__item--danger',
+          type: 'button',
+          role: 'menuitem',
+          onclick: () => {
+            hideMenu()
+            handlers.onDelete?.(id)
+          },
+        },
+        icon('trash'),
+        h('span', { text: 'Delete' }),
+      ),
+    )
+
+    menu.hidden = false
+    placeMenu(e.clientX, e.clientY)
+  }
+
+  function onContextMenu(e) {
+    // Capture-phase preventDefault so the browser menu never appears on the board.
+    e.preventDefault()
+    e.stopPropagation()
+    if (menu.contains(e.target)) return
+    const card = e.target.closest?.('.card')
+    if (card && root.contains(card)) showMenu(e, card)
+    else hideMenu()
+  }
+
+  function onMenuContextMenu(e) {
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
+  function onPointerDown(e) {
+    if (menu.hidden || !menu.isConnected) return
+    if (menu.contains(e.target)) return
+    hideMenu()
+  }
+
+  function onKeyDown(e) {
+    if (e.key !== 'Escape' || menu.hidden) return
+    e.preventDefault()
+    e.stopPropagation()
+    hideMenu()
+  }
+
+  root.addEventListener('contextmenu', onContextMenu, true)
+  menu.addEventListener('contextmenu', onMenuContextMenu, true)
+  document.addEventListener('pointerdown', onPointerDown, true)
+  document.addEventListener('keydown', onKeyDown, true)
+  root.addEventListener('scroll', hideMenu, true)
+
   /**
    * @param {Map<string, object[]>} byStage  stage id -> cards, already sorted and filtered
    * @param {object} opts  { filtering: boolean } -- changes the empty-state copy
@@ -143,7 +248,17 @@ export function createBoardView(root, handlers) {
     node.classList.add('is-flash')
   }
 
-  return { render, columns, cardNode, flash }
+  function destroy() {
+    hideMenu()
+    root.removeEventListener('contextmenu', onContextMenu, true)
+    menu.removeEventListener('contextmenu', onMenuContextMenu, true)
+    document.removeEventListener('pointerdown', onPointerDown, true)
+    document.removeEventListener('keydown', onKeyDown, true)
+    root.removeEventListener('scroll', hideMenu, true)
+    menu.remove()
+  }
+
+  return { render, columns, cardNode, flash, hideMenu, destroy }
 }
 
 function readHideDone() {
