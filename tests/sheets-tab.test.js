@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createSheetsView } from '../src/ui/sheets.js'
 import { normalizeSheet } from '../src/sheet-model.js'
 import { installShell, teardownShell } from './helpers/shell.js'
+import { setCaretOffsets, caretOffsets, plainText } from '../src/rich-text.js'
 
 function tab(target, { shift = false } = {}) {
   const ev = new KeyboardEvent('keydown', {
@@ -42,28 +43,27 @@ describe('notepad Tab', () => {
   })
 
   it('keeps Tab on the page and indents the current line', () => {
-    body.setSelectionRange(0, 0)
+    setCaretOffsets(body, 0, 0)
     const ev = tab(body)
     expect(ev.defaultPrevented).toBe(true)
-    expect(body.value).toBe('\thello')
+    expect(plainText(body)).toBe('\thello')
     expect(document.activeElement).toBe(body)
   })
 
   it('moves to the next line on Shift+Tab', () => {
-    body.setSelectionRange(5, 5)
+    setCaretOffsets(body, 5, 5)
     const ev = tab(body, { shift: true })
     expect(ev.defaultPrevented).toBe(true)
-    expect(body.value).toBe('hello\n')
-    expect(body.selectionStart).toBe(6)
+    expect(plainText(body)).toBe('hello\n')
+    expect(caretOffsets(body).start).toBe(6)
     expect(document.activeElement).toBe(body)
   })
 
   it('does not steal Tab while another view is showing', () => {
     document.body.dataset.view = 'board'
     root.hidden = true
-    body.value = 'hello'
     const ev = tab(body)
     expect(ev.defaultPrevented).toBe(false)
-    expect(body.value).toBe('hello')
+    expect(plainText(body)).toBe('hello')
   })
 })
