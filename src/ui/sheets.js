@@ -4,7 +4,7 @@
  */
 import { h, clear, icon } from './dom.js'
 import { fillLinked, hasLinks } from '../linkify.js'
-import { SHEET_LIMITS, SHEET_LINE, padToLine, offsetAtLine } from '../sheet-model.js'
+import { SHEET_LIMITS, SHEET_LINE, padToLine, offsetAtLine, indentSelection, nextLineCaret } from '../sheet-model.js'
 
 const AUTOSAVE_MS = 450
 
@@ -37,6 +37,17 @@ export function createSheetsView(root, handlers) {
     onblur: flush,
   })
   body.addEventListener('pointerdown', (e) => goToClickedLine(e))
+  body.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return
+    e.preventDefault()
+    if (e.shiftKey) {
+      const next = nextLineCaret(body.value, body.selectionStart)
+      applyBody(next.text, next.offset)
+    } else {
+      const next = indentSelection(body.value, body.selectionStart, body.selectionEnd)
+      applyBody(next.text, next.start, next.end)
+    }
+  })
   const links = h('div', { class: 'sheets__links' })
   const delBtn = h(
     'button',
@@ -130,6 +141,16 @@ export function createSheetsView(root, handlers) {
     const pos = offsetAtLine(body.value, line)
     body.focus()
     body.setSelectionRange(pos, pos)
+  }
+
+  function applyBody(next, start, end = start) {
+    const capped = String(next || '').slice(0, SHEET_LIMITS.body)
+    body.value = capped
+    const from = Math.max(0, Math.min(start, capped.length))
+    const to = Math.max(0, Math.min(end, capped.length))
+    body.setSelectionRange(from, to)
+    queue({ body: capped })
+    paintLinks(capped)
   }
 
   function queue(patch) {

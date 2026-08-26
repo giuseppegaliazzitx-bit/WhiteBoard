@@ -1127,6 +1127,7 @@ body[data-view="whiteboard"] .sheets { display: none !important; }
   font-size: 16px;
   line-height: 32px; /* keep in sync with SHEET_LINE */
   white-space: pre;
+  tab-size: 4;
   background-color: transparent;
   background-image: repeating-linear-gradient(
     to bottom,

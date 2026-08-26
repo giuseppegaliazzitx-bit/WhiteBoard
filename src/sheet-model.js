@@ -21,6 +21,66 @@ export function padToLine(text, lineIndex) {
   return parts.concat(Array(index - parts.length + 1).fill('')).join('\n')
 }
 
+/** One indent step. Tab in the notepad inserts this. */
+export const SHEET_INDENT = '\t'
+
+function clampOffset(text, n) {
+  return Math.max(0, Math.min(Number(n) || 0, text.length))
+}
+
+/**
+ * Indent every line touched by the selection. A caret with no selection
+ * still indents its line, which is what people mean by Tab on a notepad.
+ *
+ * @returns {{ text: string, start: number, end: number }}
+ */
+export function indentSelection(text, start, end, indent = SHEET_INDENT) {
+  const src = String(text || '')
+  const pad = String(indent ?? SHEET_INDENT)
+  if (!pad) return { text: src, start: clampOffset(src, start), end: clampOffset(src, end) }
+
+  let from = clampOffset(src, start)
+  let to = clampOffset(src, end)
+  if (to < from) [from, to] = [to, from]
+
+  const lineStart = from === 0 ? 0 : src.lastIndexOf('\n', from - 1) + 1
+  let lineEnd = to
+  if (to > from && src[to - 1] === '\n') {
+    lineEnd = to - 1
+  } else {
+    const nl = src.indexOf('\n', to)
+    lineEnd = nl === -1 ? src.length : nl
+  }
+
+  const before = src.slice(0, lineStart)
+  const block = src.slice(lineStart, lineEnd)
+  const after = src.slice(lineEnd)
+  const lines = block.split('\n')
+  const indented = lines.map((line) => pad + line).join('\n')
+  const next = before + indented + after
+  return {
+    text: next,
+    start: from + pad.length,
+    end: to + pad.length * lines.length,
+  }
+}
+
+/**
+ * Caret at the start of the line after `cursor`, adding a blank line if
+ * we are already on the last row.
+ *
+ * @returns {{ text: string, offset: number }}
+ */
+export function nextLineCaret(text, cursor) {
+  const src = String(text || '')
+  const pos = clampOffset(src, cursor)
+  const lineStart = pos === 0 ? 0 : src.lastIndexOf('\n', pos - 1) + 1
+  const currentLine = src.slice(0, Math.max(0, lineStart)).split('\n').length - 1
+  const nextIndex = currentLine + 1
+  const padded = padToLine(src, nextIndex)
+  return { text: padded, offset: offsetAtLine(padded, nextIndex) }
+}
+
 /** Character offset at the start of `lineIndex`. */
 export function offsetAtLine(text, lineIndex) {
   const src = String(text || '')
