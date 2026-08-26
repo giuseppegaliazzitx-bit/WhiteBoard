@@ -287,7 +287,7 @@ const drag = createDragController({
   onMove: (id, status, index) => moveCard(id, status, index),
 })
 
-const noopView = { render() {}, focusLast() {}, get currentId() { return null }, flush() {}, focusTitle() {} }
+const noopView = { render() {}, focusLast() {}, get currentId() { return null }, flush() {}, focusTitle() {}, focusBody() {} }
 
 function mountView(id, factory) {
   const el = document.getElementById(id)
@@ -522,7 +522,10 @@ function setView(name) {
   const hash = detail.currentId && next === 'board' ? `#c/${encodeURIComponent(detail.currentId)}` : `#${currentView}`
   replaceHash(hash)
   if (next !== 'board') view.hideMenu?.()
-  if (next === 'notepad' && store && !sheets.length) createSheet({ record: false })
+  if (next === 'notepad') {
+    if (store && !sheets.length) createSheet({ record: false })
+    else sheetsView.focusBody?.()
+  }
 }
 
 // ------------------------------------------------------------------ chrome

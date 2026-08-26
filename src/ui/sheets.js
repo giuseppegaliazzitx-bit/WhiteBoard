@@ -37,17 +37,6 @@ export function createSheetsView(root, handlers) {
     onblur: flush,
   })
   body.addEventListener('pointerdown', (e) => goToClickedLine(e))
-  body.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab') return
-    e.preventDefault()
-    if (e.shiftKey) {
-      const next = nextLineCaret(body.value, body.selectionStart)
-      applyBody(next.text, next.offset)
-    } else {
-      const next = indentSelection(body.value, body.selectionStart, body.selectionEnd)
-      applyBody(next.text, next.start, next.end)
-    }
-  })
   const links = h('div', { class: 'sheets__links' })
   const delBtn = h(
     'button',
@@ -91,6 +80,54 @@ export function createSheetsView(root, handlers) {
     if (e.target === body) return
     goToClickedLine(e)
   })
+
+  function notepadOpen() {
+    return document.body.dataset.view === 'notepad' && !root.hidden
+  }
+
+  function overlayOpen() {
+    return Boolean(document.querySelector('#modal-root .modal, #detail-root .drawer'))
+  }
+
+  function isTab(e) {
+    return e.key === 'Tab' || e.code === 'Tab' || e.keyCode === 9
+  }
+
+  function applyTab(shift) {
+    if (document.activeElement !== body) body.focus()
+    if (shift) {
+      const next = nextLineCaret(body.value, body.selectionStart)
+      applyBody(next.text, next.offset)
+    } else {
+      const next = indentSelection(body.value, body.selectionStart, body.selectionEnd)
+      applyBody(next.text, next.start, next.end)
+    }
+  }
+
+  /**
+   * Capture Tab before the browser can move focus into chrome. The notepad
+   * body is last in the page tab order, so an unhandled Tab leaves the site.
+   */
+  function onTabCapture(e) {
+    if (!notepadOpen() || overlayOpen() || !isTab(e)) return
+    e.preventDefault()
+    e.stopPropagation()
+    e.stopImmediatePropagation?.()
+
+    if (e.target === title) {
+      if (e.shiftKey) return
+      body.focus()
+      return
+    }
+
+    applyTab(e.shiftKey)
+  }
+
+  window.addEventListener('keydown', onTabCapture, true)
+
+  function destroy() {
+    window.removeEventListener('keydown', onTabCapture, true)
+  }
 
   const empty = h(
     'div',
@@ -248,5 +285,9 @@ export function createSheetsView(root, handlers) {
     focusTitle() {
       title.focus()
     },
+    focusBody() {
+      body.focus()
+    },
+    destroy,
   }
 }
